@@ -17,3 +17,11 @@ Thumbs.db
 .vscode/
 .idea/
 node_modules
+
+# Local SQA reports and temporary browser profiles
+outputs/
+qa/evidence*/
+qa/zoom-profile/
+qa/artifact/*.png
+qa/artifact/*.xlsx
+backups/

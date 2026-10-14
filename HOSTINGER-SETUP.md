@@ -1,5 +1,15 @@
 # Appointment System — Hostinger Web App (fixed deployment)
 
+## Verified local SQA fixes on October 14, 2026
+
+The application now enforces 8 AM–6 PM appointments in Asia/Manila and rejects new bookings/reschedules in the past. Schedule conflicts are checked against current saved data and checked again inside the database transaction. Editing submits the original record version; cancellation reasons are optional. Combined filters, separate executive calendar lanes, accessible keyboard dialogs, and persistent notification preferences are implemented.
+
+The database setup adds notification preferences, notifications, and an email outbox through non-destructive table creation. Existing accounts, appointments, and history are retained. The running Node server scans for reminders automatically; no separate cron job is required.
+
+For external email delivery, configure `SMTP_HOST`, `SMTP_PORT` (normally 587), `SMTP_USER`, `SMTP_PASSWORD`, and `SMTP_FROM`. Use `SMTP_SECURE=true` for port 465. Remote SMTP connections require TLS. Leave SMTP settings blank to use in-app notifications without external email. `REMINDER_MINUTES` defaults to 60. Failed SMTP messages remain in the outbox and retry with backoff, up to five attempts.
+
+Local SQA verifies SMTP delivery using a localhost capture server. Real external inbox delivery and the live Hostinger deployment require separate verification with the hosting configuration.
+
 ## What was fixed
 
 The October 13 deployment log ended with `sh: line 1: vite: command not found`. The original project declared `vite`, `@vitejs/plugin-react`, `@tailwindcss/vite`, and `tailwindcss` as development-only dependencies. Hostinger's production-only install therefore may omit the Vite executable while still running `npm run build`.
@@ -118,3 +128,30 @@ startup but not authenticated queries.
 The new regression test is `node --test tests/db-json.test.mjs` and the
 package still includes the original Node smoke tests. Live MySQL access is
 necessary to confirm the fix end-to-end.
+# Scheduling and recovery upgrades
+
+Executive/Admin users can manage executive working days, hours, daily breaks,
+unavailable dates, buffer minutes and optional approval in Settings. Defaults
+retain 08:00–18:00, all days, zero buffer and immediate confirmation. Enabling
+approval affects future new/rescheduled requests, not already confirmed records.
+Pending requests reserve their slot. Only the assigned executive or an admin can
+approve/decline; declines require a reason. Availability changes that invalidate
+existing future appointments are rejected. Reschedule those appointments first.
+
+Schema migration 6 adds executive_schedules without modifying existing records.
+
+Backup locally with:
+`node --env-file=.env.local server/backup.mjs backup`
+Restore into a NEW database with:
+`node --env-file=.env.local server/backup.mjs restore backups/FILE.sql NEW_DATABASE`
+Restore checks the checksum and refuses existing databases; it clears restored
+sessions and skips unsent email to avoid replaying notifications. Verify restored
+records before changing DB_NAME. SQL backups include personal records/password
+hashes: keep them outside public web folders and restrict file access. Backups are
+excluded from Git. MYSQL_BIN_DIR selects the directory containing mysqldump/mysql
+(defaults to C:/xampp/mysql/bin on Windows). Schedule this backup command using
+Task Scheduler or your hosting scheduler and retain copies outside the server.
+
+Email delivery already uses the SMTP queue with retry/TLS. Actual external delivery
+requires SMTP_HOST, SMTP_PORT, SMTP_FROM and provider credentials in the private
+environment file. Verify delivery to a real inbox after configuring the provider.

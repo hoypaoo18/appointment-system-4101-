@@ -1,3 +1,21 @@
+Current verified SQA — October 14, 2026
+
+TC-01 through TC-41: 41 Pass, 0 Fail, 0 Blocked, 0 Not Run.
+Production build, full TypeScript check, and all 7 existing automated tests passed.
+Native 200% browser zoom, keyboard-only booking, and notification dialogs passed.
+Actual SMTP reminders were verified against localhost capture, not an external inbox.
+Non-demo account login, password changes, and session revocation were verified.
+Temporary QA database/profile removed. Existing local records were verified unchanged.
+
+Answered Excel: outputs/sqa-2026-10-14-fixed/Appointment-System-SQA-Answered.xlsx
+Evidence: qa/evidence-current/results.json, screenshots and Playwright traces.
+The original workbook is preserved. No Defect Log is included in the answered copy.
+Local run: npm run dev, using the ignored .env.local for the existing XAMPP database.
+No live Hostinger deployment or GitHub push was performed for these fixes.
+External email delivery requires SMTP configuration; see HOSTINGER-SETUP.md.
+
+Historical packaging notes below are superseded by the current local verification.
+
 Hostinger Web App deployment repair — October 14, 2026
 
 Original screenshot error: vite: command not found
@@ -26,3 +44,18 @@ first DB connection, and production site behavior are NOT yet verified.
 
 No live Hostinger deployment was performed. All .env.production credential
 values remain placeholders (no secret credentials imported into this ZIP).
+Scheduling upgrade verification — October 14, 2026
+
+Original TC-01 through TC-41 rerun: 41 Pass, 0 Fail, 0 Blocked, 0 Not Run.
+Evidence: qa/evidence-upgrades/results.json (including native 200% browser zoom).
+8 automated tests passed; production build and TypeScript check passed.
+Isolated integration verified executive policy permissions, breaks, leave dates,
+buffer boundaries, pending slot reservations, approval/decline, stale updates,
+reschedule reapproval and notifications. Browser verified admin policy saving,
+assigned executive approval, and mobile Settings for all three roles.
+Backup checksum/restore tested into a new disposable database; sessions cleared.
+A private backup of the existing local database was created in ignored backups/.
+Existing 12 appointment records retain their original SHA256 digest.
+External SMTP configuration deferred at the user's request.
+These changes are local; no new GitHub push or Hostinger deployment performed.
+

@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import mysql from 'mysql2/promise';
+import {openDatabase} from '../server/database.mjs';
+import {scheduleDefaults} from '../server/scheduling.mjs';
+const name='appointment_qa_d7349a8025a74167ba3c0e13ba5160d2';
+process.env.APP_ENV='test';process.env.DB_NAME=name;process.env.NODE_ENV='development';
+const admin=await mysql.createConnection({host:'127.0.0.1',user:'root',password:''});
+const [exists]=await admin.query('SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME=?',[name]);if(exists.length)throw Error('QA database already exists; refusing reuse');
+let db;
+try{
+ db=await openDatabase();
+ const users=await db.accounts.users(),exec=users.find(u=>u.role==='executive'&&u.executiveId==='exec-1'),assistant=users.find(u=>u.role==='assistant');
+ const input={clientName:'QA scheduling verification',clientOrg:'Isolated QA',clientEmail:'qa@example.com',clientPhone:'09123456789',purpose:'Verify approval and buffers',notes:'',executiveId:'exec-1',date:'2030-01-08',startTime:'10:00',duration:30};
+ const policy={...structuredClone(scheduleDefaults),bufferMinutes:15,requireApproval:true,breaks:[{startTime:'12:00',endTime:'13:00'}],unavailableDates:['2030-01-09']};
+ await assert.rejects(()=>db.scheduling.save('exec-1',policy,assistant,{}),/cannot change/);
+ await db.scheduling.save('exec-1',policy,exec,{});
+ await assert.rejects(()=>db.save({...input,startTime:'12:00'},null,assistant.name,{user:assistant}),/break/);
+ await assert.rejects(()=>db.save({...input,date:'2030-01-09'},null,assistant.name,{user:assistant}),/unavailable/);
+ const created=await db.save(input,null,assistant.name,{user:assistant});assert.equal(created.appointment.status,'pending');
+ await assert.rejects(()=>db.save({...input,startTime:'10:30'},null,assistant.name,{user:assistant}),/conflict/);
+ const adjacent=await db.save({...input,startTime:'10:45'},null,assistant.name,{user:assistant});assert.equal(adjacent.appointment.status,'pending');
+ await assert.rejects(()=>db.action(created.appointment.id,'approve',{updatedAt:created.appointment.updatedAt},assistant.name,{user:assistant}),/assigned executive/);
+ const approved=await db.action(created.appointment.id,'approve',{updatedAt:created.appointment.updatedAt},exec.name,{user:exec});assert.equal(approved.appointment.status,'confirmed');
+ await assert.rejects(()=>db.action(created.appointment.id,'approve',{updatedAt:created.appointment.updatedAt},exec.name,{user:exec}),/changed/);
+ const declined=await db.action(adjacent.appointment.id,'decline',{updatedAt:adjacent.appointment.updatedAt,reason:'Unavailable'},exec.name,{user:exec});assert.equal(declined.appointment.status,'cancelled');
+ const moved=await db.action(approved.appointment.id,'reschedule',{updatedAt:approved.appointment.updatedAt,date:input.date,startTime:'14:00',duration:30},assistant.name,{user:assistant});assert.equal(moved.appointment.status,'pending');
+ await assert.rejects(()=>db.scheduling.save('exec-1',{...policy,unavailableDates:[input.date]},exec,{}),/invalidate/);
+ const n=await db.notifications.list(exec.id);assert.ok(n.entries.some(n=>n.action==='pending'));
+ console.log('PASS: schedule permissions, breaks, leave, buffer boundaries, pending reservations, approvals, declines, stale updates, reapproval and notifications');
+}finally{if(db)await db.close();await admin.query('DROP DATABASE '+mysql.escapeId(name));await admin.end();}

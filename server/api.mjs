@@ -53,6 +53,20 @@ export function apiHandler(database, { environment = process.env.APP_ENV } = {})
         await database.accounts.logout(cookieToken, meta); cookie('', 0); return send(200, { ok: true });
       }
       if (!user) return await denied(401, 'Please sign in to continue');
+      if(req.method==='GET'&&path==='/api/executive-schedules')return send(200,{schedules:await database.scheduling.list()});
+      const scheduleMatch=path.match(/^\/api\/executive-schedules\/([^/]+)$/);
+      if(req.method==='PUT'&&scheduleMatch)return send(200,{policy:await database.scheduling.save(scheduleMatch[1],await readBody(),user,meta)});
+      if(req.method==='POST'&&path==='/api/availability')return send(200,await database.availability(await readBody()));
+      if(req.method==='GET'&&path==='/api/notifications')return send(200,await database.notifications.list(user.id));
+      if(req.method==='GET'&&path==='/api/notification-preferences')return send(200,{preferences:await database.notifications.preferences(user.id)});
+      if(req.method==='PUT'&&path==='/api/notification-preferences'){
+        const preferences=await database.notifications.savePreferences(user,await readBody());
+        await database.audit.record({...meta,user,action:'user.notification_preferences_updated',entityType:'user',entityId:user.id,details:{preferences}});
+        return send(200,{preferences});
+      }
+      const notificationMatch=path.match(/^\/api\/notifications\/([^/]+)\/read$/);
+      if(req.method==='PUT'&&notificationMatch)return send(200,await database.notifications.read(user.id,notificationMatch[1]));
+      if(req.method==='POST'&&path==='/api/notifications/read-all')return send(200,await database.notifications.read(user.id));
       if (req.method === 'GET' && path === '/api/audit-logs') {
         if (user.role !== 'admin') return await denied(403, 'Only administrators can view system history');
         return send(200, await database.audit.list(new URL(req.url, 'http://localhost').searchParams));
@@ -70,13 +84,17 @@ export function apiHandler(database, { environment = process.env.APP_ENV } = {})
         const input = await readBody();
         return send(200, { users: await database.accounts.setActive(userMatch[1], input.active, user.id, meta) });
       }
-      const match = path.match(/^\/api\/appointments(?:\/([^/]+)(?:\/(cancel|complete|reschedule))?)?$/);
+      const match = path.match(/^\/api\/appointments(?:\/([^/]+)(?:\/(cancel|complete|reschedule|approve|decline))?)?$/);
       if (!match || !['POST','PUT'].includes(req.method) || (req.method === 'PUT' && (!match[1] || match[2])) || (req.method === 'POST' && match[1] && !match[2])) return send(404, { error: 'Not found' });
-      if (user.role !== 'assistant') return await denied(403, 'Only assistants can manage appointments');
+      if(['approve','decline'].includes(match[2])){
+        if(!['executive','admin'].includes(user.role))return await denied(403,'Only executives or administrators can decide requests');
+      }else if (user.role !== 'assistant') return await denied(403, 'Only assistants can manage appointments');
       const input = await readBody();
       const result = match[2] ? await database.action(match[1], match[2], input, user.name, { ...meta, user }) : await database.save(input, match[1], user.name, { ...meta, user });
       return send(match[1] ? 200 : 201, result);
     } catch (error) {
+      const conflictId=error.status===409 && /^Schedule conflict with ([\w-]+)\./.exec(error.message)?.[1];
+      if(conflictId&&user){try{await database.notifications.conflict(user,conflictId);}catch{console.error('Unable to record conflict notification');}}
       if (!error.status) console.error(error);
       if (path !== '/api/auth/login') {
         try { await database.audit.record({ ...meta, user, action: 'request.failed', outcome: 'failure', details: { path: path.slice(0,255), method: req.method, status: error.status || 500 } }); }

@@ -31,6 +31,11 @@ CREATE TABLE IF NOT EXISTS activity (
   FOREIGN KEY (appointment_id) REFERENCES appointments(id)
 ) ENGINE=InnoDB;
 CREATE TABLE IF NOT EXISTS migrations (version INT PRIMARY KEY) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS executive_schedules (
+  executive_id VARCHAR(64) PRIMARY KEY,
+  data LONGTEXT NOT NULL CHECK(JSON_VALID(data)),
+  FOREIGN KEY (executive_id) REFERENCES executives(id)
+) ENGINE=InnoDB;
 CREATE TABLE IF NOT EXISTS write_lock (id INT PRIMARY KEY) ENGINE=InnoDB;
 INSERT IGNORE INTO write_lock VALUES (1);
 CREATE TABLE IF NOT EXISTS users (
@@ -54,4 +59,28 @@ CREATE TABLE IF NOT EXISTS user_preferences (
   calendar_view ENUM('day','week') NOT NULL DEFAULT 'week',
   duration INT NOT NULL DEFAULT 60,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS notification_preferences (
+  user_id VARCHAR(64) PRIMARY KEY,
+  data LONGTEXT NOT NULL CHECK(JSON_VALID(data)),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS notifications (
+  id VARCHAR(64) PRIMARY KEY, user_id VARCHAR(64) NOT NULL,
+  appointment_id VARCHAR(64) NOT NULL, event_key VARCHAR(255) NOT NULL,
+  occurred_at VARCHAR(24) NOT NULL, read_at VARCHAR(24) NULL,
+  data LONGTEXT NOT NULL CHECK(JSON_VALID(data)),
+  UNIQUE KEY notification_event (user_id,event_key),
+  INDEX notification_user (user_id,occurred_at),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (appointment_id) REFERENCES appointments(id)
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS notification_outbox (
+  id VARCHAR(64) PRIMARY KEY, recipient VARCHAR(255) NOT NULL,
+  status ENUM('pending','sending','sent','failed','skipped') NOT NULL DEFAULT 'pending',
+  attempts INT NOT NULL DEFAULT 0, next_attempt BIGINT NOT NULL DEFAULT 0,
+  lease_until BIGINT NOT NULL DEFAULT 0, last_error VARCHAR(100) NULL,
+  sent_at VARCHAR(24) NULL,
+  FOREIGN KEY (id) REFERENCES notifications(id) ON DELETE CASCADE,
+  INDEX outbox_pending (status,next_attempt)
 ) ENGINE=InnoDB;

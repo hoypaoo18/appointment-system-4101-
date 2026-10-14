@@ -1,6 +1,9 @@
+import { ExecutiveScheduling, ApprovalControls } from './components/ExecutiveScheduling';
 import { STATIC_PREVIEW, previewData } from './preview-data';
+import { NotificationBell } from './components/NotificationBell';
+import { AccessibleDialog } from './components/AccessibleDialog';
 import { SystemHistory } from './components/SystemHistory';
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useId, cloneElement, isValidElement } from "react";
 import { Toaster, toast } from "sonner";
 import {
   LayoutDashboard, CalendarDays, ClipboardList, History as HistoryIcon,
@@ -26,7 +29,7 @@ interface Appointment {
   createdAt: string; updatedAt: string; createdBy: string; updatedBy: string;
   cancellationReason?: string; previousDate?: string; previousStartTime?: string;
 }
-interface AppUser { id: string; name: string; email: string; role: Role; title: string; active: boolean; initials: string; }
+interface AppUser { id: string; name: string; email: string; role: Role; title: string; active: boolean; initials: string; executiveId?: string | null; }
 interface ActivityEntry {
   id: string; aptId: string; action: ActivityAction;
   user: string; timestamp: string; clientName: string; note?: string;
@@ -126,9 +129,9 @@ function Tip({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void }) {
+function Toggle({ checked, onChange, disabled = false, label }: { checked: boolean; onChange: () => void; disabled?: boolean; label?: string }) {
   return (
-    <button disabled={STATIC_PREVIEW} onClick={onChange} className={`relative w-10 h-5 rounded-full transition-colors duration-200 flex-shrink-0 ${checked ? "bg-blue-600" : "bg-slate-300"}`}>
+    <button role="switch" aria-label={label} aria-checked={checked} disabled={STATIC_PREVIEW || disabled} onClick={onChange} className={`relative w-10 h-5 rounded-full transition-colors duration-200 flex-shrink-0 ${checked ? "bg-blue-600" : "bg-slate-300"}`}>
       <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${checked ? "translate-x-5" : ""}`} />
     </button>
   );
@@ -220,7 +223,7 @@ function MobileBottomNav({ currentView, onNav, isAdmin }: { currentView: AppView
   );
 }
 
-function FloatingHeader({ title, currentUser, onNewAppointment, canCreate }: { title: string; currentUser: AppUser; onNewAppointment: () => void; canCreate: boolean }) {
+function FloatingHeader({ title, currentUser, onNewAppointment, canCreate, onOpenAppointment, onSearch }: { title: string; currentUser: AppUser; onNewAppointment: () => void; canCreate: boolean; onOpenAppointment: (id: string) => void; onSearch: (query: string) => void }) {
   return (
     <div className="sticky top-0 z-30 px-4 pt-4 pb-2">
       <div className={`${glassStrong} rounded-2xl px-5 h-14 flex items-center gap-4`}>
@@ -228,14 +231,9 @@ function FloatingHeader({ title, currentUser, onNewAppointment, canCreate }: { t
         <div className="flex items-center gap-2.5">
           <div className="relative hidden md:block">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-            <input type="text" placeholder="Search..." className="pl-8 pr-4 py-1.5 text-sm rounded-xl border border-white/60 bg-white/50 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 w-44 placeholder:text-slate-400" />
+            <input aria-label="Search all appointments" type="search" placeholder="Search..." onKeyDown={e => {if(e.key === "Enter") onSearch(e.currentTarget.value);}} className="pl-8 pr-4 py-1.5 text-sm rounded-xl border border-white/60 bg-white/50 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 w-44 placeholder:text-slate-400" />
           </div>
-          <Tip label="Notifications">
-            <button className="relative p-2 text-slate-500 hover:text-slate-700 hover:bg-white/50 rounded-xl transition-all">
-              <Bell className="w-4 h-4" />
-              <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-blue-500 rounded-full" />
-            </button>
-          </Tip>
+          {!STATIC_PREVIEW && <NotificationBell userId={currentUser.id} onOpenAppointment={onOpenAppointment} />}
           {canCreate && (
             <button onClick={onNewAppointment} className="flex items-center gap-1.5 bg-blue-600/90 hover:bg-blue-700 text-white px-4 py-1.5 rounded-xl text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-blue-500/30 active:translate-y-0 shadow-md shadow-blue-500/20">
               <Plus className="w-4 h-4" /> New Appointment
@@ -255,7 +253,7 @@ function CancelModal({ apt, onConfirm, onClose }: { apt: Appointment; onConfirm:
   const [custom, setCustom] = useState("");
   const reason = preset === "Other" ? custom : preset;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <AccessibleDialog title="Cancel Appointment" onClose={onClose}>
       <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-md" onClick={onClose} />
       <div className={`relative ${glassStrong} rounded-2xl w-full max-w-md`}>
         <div className="p-6">
@@ -288,7 +286,7 @@ function CancelModal({ apt, onConfirm, onClose }: { apt: Appointment; onConfirm:
           </div>
         </div>
       </div>
-    </div>
+    </AccessibleDialog>
   );
 }
 
@@ -296,7 +294,7 @@ function CompleteModal({ apt, onConfirm, onClose }: { apt: Appointment; onConfir
   const endTime = addMin(apt.startTime, apt.duration);
   const canComplete = apt.date <= TODAY && ["confirmed","rescheduled","pending"].includes(apt.status);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <AccessibleDialog title="Complete Appointment" onClose={onClose}>
       <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-md" onClick={onClose} />
       <div className={`relative ${glassStrong} rounded-2xl w-full max-w-md`}>
         <div className="p-6">
@@ -328,7 +326,7 @@ function CompleteModal({ apt, onConfirm, onClose }: { apt: Appointment; onConfir
           </div>
         </div>
       </div>
-    </div>
+    </AccessibleDialog>
   );
 }
 
@@ -340,9 +338,24 @@ function RescheduleModal({ apt, appointments, onConfirm, onClose }: { apt: Appoi
   const [conflict, setConflict] = useState<Appointment | null | false>(null);
   const exec = getExec(apt.executiveId);
   const endTime = addMin(newTime, duration);
-  const handleCheck = () => { const c = findConflict(appointments, apt.executiveId, newDate, newTime, duration, apt.id); setConflict(c ?? false); setChecked(true); };
+  const [validationError, setValidationError] = useState("");
+  const scheduleSignature = `${newDate}|${newTime}|${duration}`;
+  const signatureRef = useRef(scheduleSignature); signatureRef.current = scheduleSignature;
+  const handleCheck = async () => {
+    setChecked(false);
+    if (!newDate || !/^\d{4}-\d{2}-\d{2}$/.test(newDate) || !Number.isFinite(Date.parse(newDate)) || newDate < TODAY) { setValidationError("Choose a valid date today or later"); return; }
+    if (!newTime || toMin(newTime) < 480 || toMin(newTime) + duration > 1080) { setValidationError("Appointments must fit within 8:00 AM–6:00 PM (Asia/Manila)"); return; }
+    if (Date.parse(`${newDate}T${newTime}:00+08:00`) <= Date.now()) {setValidationError("Choose a start time in the future (Asia/Manila)");return;}
+    try {
+      const response=await fetch('/api/availability',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...apt,date:newDate,startTime:newTime,duration})});
+      const data=await response.json();if(signatureRef.current!==scheduleSignature)return;
+      if(!response.ok)throw new Error(data.error||'Unable to check current availability');
+      setValidationError("");setConflict(false);setChecked(true);
+      if(data.requireApproval)toast.info('Rescheduling requires executive approval.');
+    } catch(e) {setValidationError(e instanceof Error?e.message:'Unable to check current availability. Please retry.');}
+  };
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <AccessibleDialog title="Reschedule Appointment" onClose={onClose}>
       <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-md" onClick={onClose} />
       <div className={`relative ${glassStrong} rounded-2xl w-full max-w-lg`}>
         <div className="p-6">
@@ -380,6 +393,7 @@ function RescheduleModal({ apt, appointments, onConfirm, onClose }: { apt: Appoi
             </div>
             <p className="text-sm text-slate-500">End time: <span className="font-medium text-slate-900">{fmtTime(endTime)}</span></p>
           </div>
+          {validationError && <p role="alert" className="text-sm text-red-600 mb-3">{validationError}</p>}
           {checked && (
             <div className={`mb-5 p-3 rounded-xl flex items-start gap-2 text-sm border backdrop-blur-sm ${conflict ? "bg-red-50/80 border-red-200/80 text-red-800" : "bg-emerald-50/80 border-emerald-200/80 text-emerald-800"}`}>
               {conflict
@@ -402,7 +416,7 @@ function RescheduleModal({ apt, appointments, onConfirm, onClose }: { apt: Appoi
           </div>
         </div>
       </div>
-    </div>
+    </AccessibleDialog>
   );
 }
 
@@ -652,12 +666,15 @@ function DashboardView({ appointments, activityLog, onViewDetail, onNewAppointme
 
 // ─── Appointments List ────────────────────────────────────────────────────────
 
-function AppointmentsView({ appointments, onViewDetail, onEdit, onNewAppointment, onCancel, onComplete, onReschedule, currentUser }: {
-  appointments: Appointment[]; onViewDetail: (id: string) => void; onEdit: (id: string) => void;
+function AppointmentsView({ appointments, onViewDetail, onEdit, onNewAppointment, onCancel, onComplete, onReschedule, currentUser, initialSearch }: {
+  appointments: Appointment[]; initialSearch: string; onViewDetail: (id: string) => void; onEdit: (id: string) => void;
   onNewAppointment: () => void; onCancel: (id: string) => void; onComplete: (id: string) => void; onReschedule: (id: string) => void; currentUser: AppUser;
 }) {
   const [tab, setTab] = useState("all");
   const [search, setSearch] = useState("");
+  useEffect(() => setSearch(initialSearch), [initialSearch]);
+  const [executiveFilter, setExecutiveFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState("");
   const tabs = [
     { id: "all",         label: "All",         count: () => appointments.length },
     { id: "today",       label: "Today",        count: () => appointments.filter(a => a.date === TODAY).length },
@@ -674,8 +691,10 @@ function AppointmentsView({ appointments, onViewDetail, onEdit, onNewAppointment
     else if (tab === "upcoming") r = r.filter(a => a.date > TODAY && !["cancelled","completed"].includes(a.status));
     else if (["pending","confirmed","rescheduled","completed","cancelled"].includes(tab)) r = r.filter(a => a.status === tab);
     if (search) { const q = search.toLowerCase(); r = r.filter(a => a.clientName.toLowerCase().includes(q) || a.clientOrg.toLowerCase().includes(q) || a.purpose.toLowerCase().includes(q) || a.id.toLowerCase().includes(q)); }
+    if (executiveFilter !== "all") r = r.filter(a => a.executiveId === executiveFilter);
+    if (dateFilter) r = r.filter(a => a.date === dateFilter);
     return r.sort((a, b) => b.date.localeCompare(a.date) || b.startTime.localeCompare(a.startTime));
-  }, [appointments, tab, search]);
+  }, [appointments, tab, search, executiveFilter, dateFilter]);
   const isAssistant = currentUser.role === "assistant";
   return (
     <div className="p-4 md:p-6 space-y-5">
@@ -693,6 +712,11 @@ function AppointmentsView({ appointments, onViewDetail, onEdit, onNewAppointment
             </button>
           )}
         </div>
+      </div>
+      <div className="flex flex-wrap gap-3 items-center">
+        <label className="text-xs text-slate-500">Executive<select aria-label="Filter by executive" value={executiveFilter} onChange={e => setExecutiveFilter(e.target.value)} className={inpOk}><option value="all">All executives</option>{EXECUTIVES.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</select></label>
+        <label className="text-xs text-slate-500">Date<input aria-label="Filter by date" type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)} className={inpOk} /></label>
+        {(search || dateFilter || executiveFilter !== "all" || tab !== "all") && <button className={inpOk + " w-auto"} onClick={() => {setSearch("");setExecutiveFilter("all");setDateFilter("");setTab("all");}}>Clear</button>}
       </div>
       <div className={`${glass} rounded-2xl px-4 pt-1 flex gap-0.5 overflow-x-auto`}>
         {tabs.map(t => {
@@ -764,13 +788,19 @@ const STEP_META: { id: BookStep; label: string }[] = [
 ];
 const FORM_STEPS: BookStep[] = ["client","meeting","executive","datetime","availability","review"];
 
-const F = ({ label, err, req = true, children }: { label: string; err?: string; req?: boolean; children: React.ReactNode }) => (
+const F = ({ label, err, req = true, children }: { label: string; err?: string; req?: boolean; children: React.ReactNode }) => {
+  const id = useId();
+  const child = isValidElement(children) ? children as React.ReactElement<any> : null;
+  const textField = child && (child.type === "textarea" || (child.type === "input" && !["date", "time", "number"].includes(child.props.type)));
+  const limit = child?.type === "textarea" ? 10000 : 500;
+  return (
     <div>
-      <label className="block text-sm font-medium text-slate-700 mb-1.5">{label}{req && <span className="text-red-500 ml-0.5">*</span>}</label>
-      {children}
-      {err && <p className="text-xs text-red-600 mt-1">{err}</p>}
+      <label htmlFor={child ? id : undefined} className="block text-sm font-medium text-slate-700 mb-1.5">{label}{req && <span className="text-red-500 ml-0.5">*</span>}</label>
+      {child ? cloneElement(child, { id, "aria-invalid": !!err, "aria-required": req, "aria-describedby": `${id}-feedback`, ...(textField ? { maxLength: limit } : {}) }) : children}
+      <p id={`${id}-feedback`} role={err ? "alert" : undefined} className={`text-xs mt-1 ${err ? "text-red-600" : "text-slate-400"}`}>{err || (textField ? `Maximum ${limit.toLocaleString()} characters` : "")}</p>
     </div>
   );
+};
 
 const Card = ({ title, Icon, children }: { title: string; Icon: React.FC<{ className?: string }>; children: React.ReactNode }) => (
     <div className={`${glass} rounded-2xl overflow-hidden`}>
@@ -785,7 +815,8 @@ function NewAppointmentView({ appointments, onSave, onBack, onViewDetail, onNavD
   onBack: () => void; onViewDetail: (id: string) => void; onNavDashboard: () => void;
   currentUser: AppUser; editData?: Appointment; preFill?: { date?: string; startTime?: string }; defaultDuration: number;
 }) {
-  const isEdit = !!editData;
+  const [isEdit] = useState(!!editData);
+  const [editVersion] = useState(editData?.updatedAt);
   const [step, setStep] = useState<BookStep>("client");
   const [form, setForm] = useState<BookForm>({
     clientName: editData?.clientName ?? "", clientOrg: editData?.clientOrg ?? "",
@@ -795,7 +826,7 @@ function NewAppointmentView({ appointments, onSave, onBack, onViewDetail, onNavD
     startTime: editData?.startTime ?? preFill?.startTime ?? "", duration: String(editData?.duration ?? defaultDuration),
   });
   const [errors, setErrors] = useState<Partial<Record<keyof BookForm, string>>>({});
-  const [avConflict, setAvConflict] = useState<Appointment | null | false | undefined>(undefined);
+  const [avConflict, setAvConflict] = useState<Appointment | false | undefined>(undefined);
   const [savedApt, setSavedApt] = useState<Appointment | null>(null);
 
   const dur = parseInt(form.duration || "60");
@@ -813,7 +844,11 @@ function NewAppointmentView({ appointments, onSave, onBack, onViewDetail, onNavD
     if (fields.includes("purpose") && !form.purpose.trim()) e.purpose = "Meeting purpose is required";
     if (fields.includes("executiveId") && !form.executiveId) e.executiveId = "Please select an executive";
     if (fields.includes("date")) { if (!form.date) e.date = "Appointment date is required"; else if (form.date < TODAY) e.date = "Appointment date cannot be in the past"; }
-    if (fields.includes("startTime") && !form.startTime) e.startTime = "Start time is required";
+    if (fields.includes("startTime")) {
+      if (!form.startTime) e.startTime = "Start time is required";
+      else if (toMin(form.startTime) < 480 || toMin(form.startTime) + dur > 1080) e.startTime = "Appointments must fit within 8:00 AM–6:00 PM (Asia/Manila)";
+      else if ((!editData || editData.date !== form.date || editData.startTime !== form.startTime) && Date.parse(`${form.date}T${form.startTime}:00+08:00`) <= Date.now()) e.startTime = "Choose a start time in the future (Asia/Manila)";
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -825,10 +860,14 @@ function NewAppointmentView({ appointments, onSave, onBack, onViewDetail, onNavD
     datetime:  { fields: ["date","startTime"], next: "availability" },
   };
 
-  const goNext = () => {
+  const formSignatureRef = useRef(""); formSignatureRef.current = `${form.executiveId}|${form.date}|${form.startTime}|${dur}`;
+  const goNext = async () => {
     const cfg = NEXT[step];
     if (!cfg || !validate(cfg.fields)) return;
-    if (cfg.next === "availability") { const c = findConflict(appointments, form.executiveId, form.date, form.startTime, dur, editData?.id); setAvConflict(c ?? false); }
+    if (cfg.next === "availability") {
+      const signature = formSignatureRef.current;
+      try{const response=await fetch('/api/availability',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...form,duration:dur,id:editData?.id})});const data=await response.json();if(signature!==formSignatureRef.current)return;if(!response.ok){const conflictId=/^Schedule conflict with ([\w-]+)\./.exec(data.error||'')?.[1];if(conflictId){const state=await fetch('/api/state').then(r=>r.json());if(signature!==formSignatureRef.current)return;const conflict=state.appointments.find((a:Appointment)=>a.id===conflictId);if(conflict){setAvConflict(conflict);setStep('availability');return;}}throw new Error(data.error||'Unable to check availability');}setAvConflict(false);if(data.requireApproval)toast.info('This executive requires approval. Your request will remain pending.');}catch(e){toast.error(e instanceof Error?e.message:'Unable to check current availability. Please retry.');return;}
+    }
     setStep(cfg.next);
   };
 
@@ -845,7 +884,7 @@ function NewAppointmentView({ appointments, onSave, onBack, onViewDetail, onNavD
       id: editData?.id ?? genId(), clientName: form.clientName, clientOrg: form.clientOrg,
       clientEmail: form.clientEmail, clientPhone: form.clientPhone, purpose: form.purpose, notes: form.notes,
       executiveId: form.executiveId, date: form.date, startTime: form.startTime, duration: dur,
-      status: editData?.status ?? "confirmed", createdAt: editData?.createdAt ?? now, updatedAt: now,
+      status: editData?.status ?? "confirmed", createdAt: editData?.createdAt ?? now, updatedAt: editVersion ?? now,
       createdBy: editData?.createdBy ?? currentUser.name, updatedBy: currentUser.name,
     };
     try {
@@ -860,7 +899,7 @@ function NewAppointmentView({ appointments, onSave, onBack, onViewDetail, onNavD
       <div className="w-16 h-16 bg-emerald-100/80 rounded-full flex items-center justify-center mb-4 border border-emerald-200/60 shadow-lg shadow-emerald-200/40">
         <CheckCircle2 className="w-8 h-8 text-emerald-600" />
       </div>
-      <h2 className="text-xl font-semibold text-slate-900 mb-1">{isEdit ? "Appointment Updated!" : "Appointment Confirmed!"}</h2>
+      <h2 className="text-xl font-semibold text-slate-900 mb-1">{savedApt.status === "pending" ? "Awaiting Approval" : isEdit ? "Appointment Updated!" : "Appointment Confirmed!"}</h2>
       <p className="text-sm text-slate-500 mb-8">{isEdit ? "The appointment has been successfully updated." : "The appointment has been successfully created."}</p>
       <div className={`${glass} rounded-2xl p-6 w-full text-left space-y-3 mb-8`}>
         <div className="flex items-center justify-between text-xs mb-2"><span className="font-mono text-slate-400">{savedApt.id}</span><StatusBadge status={savedApt.status} /></div>
@@ -1058,8 +1097,8 @@ function NewAppointmentView({ appointments, onSave, onBack, onViewDetail, onNavD
 
 // ─── Appointment Detail ───────────────────────────────────────────────────────
 
-function AppointmentDetailView({ apt, activityLog, onBack, onEdit, onCancel, onComplete, onReschedule, currentUser }: {
-  apt: Appointment; activityLog: ActivityEntry[]; onBack: () => void; onEdit: (id: string) => void;
+function AppointmentDetailView({ apt, activityLog, onBack, onEdit, onCancel, onComplete, onReschedule, currentUser, onApprovalDone }: {
+  onApprovalDone: () => void; apt: Appointment; activityLog: ActivityEntry[]; onBack: () => void; onEdit: (id: string) => void;
   onCancel: (id: string) => void; onComplete: (id: string) => void; onReschedule: (id: string) => void; currentUser: AppUser;
 }) {
   const exec = getExec(apt.executiveId);
@@ -1095,6 +1134,7 @@ function AppointmentDetailView({ apt, activityLog, onBack, onEdit, onCancel, onC
         )}
       </div>
 
+      <ApprovalControls appointment={apt} user={currentUser} onDone={onApprovalDone} />
       {apt.status === "rescheduled" && apt.previousDate && (
         <div className="mb-5 p-4 bg-blue-50/80 border border-blue-200/70 rounded-2xl text-sm text-blue-800 flex items-start gap-2">
           <RefreshCw className="w-4 h-4 flex-shrink-0 mt-0.5" /> Originally scheduled for <strong>{fmtDateShort(apt.previousDate)}</strong>{apt.previousStartTime ? <> at <strong>{fmtTime(apt.previousStartTime)}</strong></> : null}. Rescheduled to current time.
@@ -1179,7 +1219,7 @@ function AppointmentDetailView({ apt, activityLog, onBack, onEdit, onCancel, onC
 
 // ─── Schedule ─────────────────────────────────────────────────────────────────
 
-function ScheduleView({ appointments, onViewDetail, onNewAptFromSlot, defaultView }: { appointments: Appointment[]; onViewDetail: (id: string) => void; onNewAptFromSlot: (date: string, startTime: string) => void; defaultView: "day" | "week" }) {
+function ScheduleView({ appointments, onViewDetail, onNewAptFromSlot, defaultView, canCreate }: { appointments: Appointment[]; onViewDetail: (id: string) => void; onNewAptFromSlot: (date: string, startTime: string) => void; defaultView: "day" | "week"; canCreate: boolean }) {
   const [calView, setCalView] = useState<"day"|"week">(defaultView);
   const [currentDate, setCurrentDate] = useState(() => new Date(TODAY + "T00:00:00"));
   const HOUR_H = 64, START_H = 8, END_H = 18;
@@ -1241,9 +1281,12 @@ function ScheduleView({ appointments, onViewDetail, onNewAptFromSlot, defaultVie
                   {HOURS.map(h => (
                     <div key={h} style={{ height: `${HOUR_H}px` }}
                       className="border-b border-white/30 last:border-0 cursor-pointer hover:bg-blue-100/20 transition-colors"
-                      onClick={() => onNewAptFromSlot(ds, `${h.toString().padStart(2,"0")}:00`)} />
+                      role={canCreate && ds >= TODAY ? "button" : undefined} tabIndex={canCreate && ds >= TODAY ? 0 : undefined} aria-label={`Book ${ds} at ${h}:00`} onKeyDown={e => { if (canCreate && ds >= TODAY && ["Enter", " "].includes(e.key)) {e.preventDefault();onNewAptFromSlot(ds, `${h.toString().padStart(2,"0")}:00`);} }} onClick={() => canCreate && ds >= TODAY && onNewAptFromSlot(ds, `${h.toString().padStart(2,"0")}:00`)} />
                   ))}
                   {dayApts.map(apt => {
+                    // Give each executive a stable lane so concurrent meetings remain selectable.
+                    const lane = Math.max(0, EXECUTIVES.findIndex(e => e.id === apt.executiveId));
+                    const laneCount = Math.max(1, EXECUTIVES.length);
                     const s = toMin(apt.startTime);
                     if (s < START_H * 60 || s >= END_H * 60) return null;
                     const h = aptH(apt.duration);
@@ -1251,7 +1294,7 @@ function ScheduleView({ appointments, onViewDetail, onNewAptFromSlot, defaultVie
                     return (
                       <button key={apt.id} onClick={e => { e.stopPropagation(); onViewDetail(apt.id); }}
                         className={`absolute left-0.5 right-0.5 rounded-lg border-l-2 overflow-hidden text-left hover:shadow-lg hover:-translate-y-0.5 transition-all text-xs backdrop-blur-sm z-10 ${statusBar[apt.status]}`}
-                        style={{ top: `${aptTop(apt.startTime)}px`, height: `${h}px` }}>
+                        style={{ top: `${aptTop(apt.startTime)}px`, height: `${h}px`, left: `calc(${lane * 100 / laneCount}% + 2px)`, right: `calc(${(laneCount - lane - 1) * 100 / laneCount}% + 2px)` }}>
                         <div className="px-1.5 py-1">
                           <div className="font-semibold truncate leading-tight">{apt.clientName}</div>
                           {h > 36 && <div className="truncate opacity-80 leading-tight">{apt.purpose}</div>}
@@ -1334,6 +1377,19 @@ function SettingsView({ currentUser, users, onUpdateUsers, onPasswordChanged, pr
   const isAdmin = currentUser.role === "admin";
   const [activeTab, setActiveTab] = useState<"profile"|"account"|"notifications"|"preferences">("profile");
   const [notifications, setNotifications] = useState(NOTIFICATION_DEFAULTS);
+  const [notificationBusy, setNotificationBusy] = useState(true);
+  const [mailConfigured, setMailConfigured] = useState(false);
+  useEffect(() => {
+    if (STATIC_PREVIEW) {setNotificationBusy(false);return;}
+    let active=true;
+    void Promise.all([fetch('/api/notification-preferences').then(r=>{if(!r.ok)throw new Error();return r.json();}),fetch('/api/notifications').then(r=>{if(!r.ok)throw new Error();return r.json();})]).then(([prefs,status])=>{if(active){setNotifications(prefs.preferences);setMailConfigured(status.emailConfigured);}}).catch(()=>toast.error('Unable to load notification preferences')).finally(()=>{if(active)setNotificationBusy(false);});
+    return()=>{active=false;};
+  },[currentUser.id]);
+  const saveNotification = async (key: keyof typeof NOTIFICATION_DEFAULTS) => {
+    if(notificationBusy)return;setNotificationBusy(true);
+    const next={...notifications,[key]:!notifications[key]};
+    try{const response=await fetch('/api/notification-preferences',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(next)});const data=await response.json();if(!response.ok)throw new Error(data.error||'Unable to save preferences');setNotifications(data.preferences);toast.success('Notification preference saved');}catch(e){toast.error(e instanceof Error?e.message:'Unable to save preferences');}finally{setNotificationBusy(false);}
+  };
   const [calDefault, setCalDefault] = useState<"day"|"week">(preferences.calendarView);
   const [durationDefault, setDurationDefault] = useState(String(preferences.duration));
   const [passwordFields, setPasswordFields] = useState(["", "", ""]);
@@ -1354,6 +1410,7 @@ function SettingsView({ currentUser, users, onUpdateUsers, onPasswordChanged, pr
   return (
     <div className="p-4 md:p-6 space-y-5 max-w-4xl">
       <h1 className="text-xl font-semibold text-slate-900 tracking-tight">Settings</h1>
+      <ExecutiveScheduling user={currentUser} />
       <div className={`${glass} rounded-2xl px-4 pt-1 flex gap-0.5 overflow-x-auto`}>
         {tabs.map(t => <button key={t.id} onClick={() => setActiveTab(t.id)} className={`px-5 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${activeTab === t.id ? "border-blue-500 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-700"}`}>{t.label}</button>)}
       </div>
@@ -1406,6 +1463,7 @@ function SettingsView({ currentUser, users, onUpdateUsers, onPasswordChanged, pr
         <div className={`${glass} rounded-2xl overflow-hidden`}>
           <div className="px-5 py-4 border-b border-white/40 flex items-center gap-2 bg-white/20"><Bell className="w-4 h-4 text-slate-500" /><h3 className="text-sm font-semibold text-slate-900">Notification Preferences</h3></div>
           <div className="p-6 space-y-3">
+            <p className="text-xs text-slate-500">{mailConfigured ? "In-app and email notifications are available." : "In-app notifications are available. Email delivery is not configured."}</p>
             {[
               { key: "confirmations" as const, label: "Appointment Confirmations", desc: "Notify when appointments are confirmed" },
               { key: "rescheduling" as const,  label: "Appointment Rescheduling",  desc: "Notify when appointments are rescheduled" },
@@ -1415,7 +1473,7 @@ function SettingsView({ currentUser, users, onUpdateUsers, onPasswordChanged, pr
             ].map(n => (
               <div key={n.key} className="flex items-center justify-between p-4 bg-white/40 rounded-xl border border-white/60">
                 <div><div className="text-sm font-medium text-slate-900">{n.label}</div><div className="text-xs text-slate-500 mt-0.5">{n.desc}</div></div>
-                <Toggle checked={notifications[n.key]} onChange={() => { const next = !notifications[n.key]; setNotifications(p => ({ ...p, [n.key]: next })); toast.success(`${n.label} ${next ? "enabled" : "disabled"}`); }} />
+                <Toggle label={n.label} checked={notifications[n.key]} disabled={notificationBusy} onChange={() => void saveNotification(n.key)} />
               </div>
             ))}
           </div>
@@ -1494,12 +1552,14 @@ const VIEW_TITLES: Record<AppView, string> = {
 export default function App() {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [view, setView] = useState<AppView>("dashboard");
+  const [globalSearch, setGlobalSearch] = useState("");
   const [prevView, setPrevView] = useState<AppView>("appointments");
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [users, setUsers] = useState<AppUser[]>([]);
   const [activityLog, setActivityLog] = useState<ActivityEntry[]>([]);
   const [selectedAptId, setSelectedAptId] = useState<string | null>(null);
   const [editAptId, setEditAptId] = useState<string | null>(null);
+  const [bookingKey, setBookingKey] = useState(0);
   const [cancelId, setCancelId] = useState<string | null>(null);
   const [completeId, setCompleteId] = useState<string | null>(null);
   const [rescheduleId, setRescheduleId] = useState<string | null>(null);
@@ -1545,6 +1605,14 @@ export default function App() {
       finally { setLoading(false); }
     })();
   }, []);
+  useEffect(() => {
+    if (!currentUser || STATIC_PREVIEW || view === "new-appointment" || cancelId || completeId || rescheduleId) return;
+    let running=false;
+    const refresh=async()=>{if(running||document.hidden)return;running=true;try{await load(false);}finally{running=false;}};
+    const timer=setInterval(()=>void refresh(),3000);
+    window.addEventListener('focus',refresh);
+    return()=>{clearInterval(timer);window.removeEventListener('focus',refresh);};
+  },[currentUser?.id,view,cancelId,completeId,rescheduleId]);
   const logout = async () => {
     if (STATIC_PREVIEW) { setCurrentUser(null); setView("dashboard"); return; }
     try {
@@ -1580,13 +1648,13 @@ export default function App() {
   };
 
   const handleViewDetail = (id: string) => { setPrevView(view === "detail" ? prevView : view); setSelectedAptId(id); setView("detail"); };
-  const handleEdit = (id: string) => { setEditAptId(id); setAptPreFill(undefined); setPrevView(view); setView("new-appointment"); };
-  const handleNewAptFromSlot = (date: string, startTime: string) => { if (STATIC_PREVIEW) return; setEditAptId(null); setAptPreFill({ date, startTime }); setView("new-appointment"); };
+  const handleEdit = (id: string) => { setBookingKey(k => k + 1); setEditAptId(id); setAptPreFill(undefined); setPrevView(view); setView("new-appointment"); };
+  const handleNewAptFromSlot = (date: string, startTime: string) => { if (!canCreate || date < TODAY) return; setBookingKey(k => k + 1); setEditAptId(null); setAptPreFill({ date, startTime }); setView("new-appointment"); };
 
   const handleSave = async (apt: Appointment) => {
     const isEdit = appointments.some(a => a.id === apt.id);
     const saved = await persist(isEdit ? `/api/appointments/${apt.id}` : "/api/appointments", isEdit ? "PUT" : "POST", apt);
-    toast.success(isEdit ? "Appointment updated" : "Appointment confirmed!", { description: saved.clientName });
+    toast.success(isEdit ? "Appointment updated" : saved.status === "pending" ? "Appointment submitted for approval" : "Appointment confirmed!", { description: saved.clientName });
     setEditAptId(null); setAptPreFill(undefined);
     return saved;
   };
@@ -1610,7 +1678,7 @@ export default function App() {
     } catch { /* Keep the dialog open for retry. */ }
   };
 
-  if (!loading && !currentUser) return <LoginView onLogin={u => { setCurrentUser(u); void load(); toast.success(`Welcome back, ${u.name.split(" ")[0]}!`); }} />;
+  if (!loading && !currentUser) return <LoginView onLogin={u => { setView("dashboard"); setGlobalSearch(""); setCurrentUser(u); void load(); toast.success(`Welcome back, ${u.name.split(" ")[0]}!`); }} />;
 
   if (loading || loadError) return <div className="min-h-screen flex flex-col items-center justify-center gap-4 text-slate-700" role="status">
     <p>{loading ? "Loading appointments…" : loadError}</p>
@@ -1635,12 +1703,12 @@ export default function App() {
       <FloatingNav currentView={view} onNav={setView} currentUser={currentUser} onLogout={() => void logout()} />
 
       <div className="relative z-10 flex flex-col min-h-screen md:ml-[272px] mr-0 md:mr-2">
-        <FloatingHeader title={VIEW_TITLES[view]} currentUser={currentUser} onNewAppointment={() => { setEditAptId(null); setAptPreFill(undefined); setView("new-appointment"); }} canCreate={canCreate} />
+        <FloatingHeader title={VIEW_TITLES[view]} currentUser={currentUser} onNewAppointment={() => { setBookingKey(k => k + 1); setEditAptId(null); setAptPreFill(undefined); setView("new-appointment"); }} canCreate={!!canCreate} onOpenAppointment={handleViewDetail} onSearch={query => {setGlobalSearch(query);setView("appointments");}} />
         <main className="flex-1 pb-28 md:pb-6">
-          {view === "dashboard" && <DashboardView appointments={appointments} activityLog={activityLog} onViewDetail={handleViewDetail} onNewAppointment={() => { setEditAptId(null); setAptPreFill(undefined); setView("new-appointment"); }} onNav={setView} currentUser={currentUser} />}
-          {view === "appointments" && <AppointmentsView appointments={appointments} onViewDetail={handleViewDetail} onEdit={handleEdit} onNewAppointment={() => { setEditAptId(null); setAptPreFill(undefined); setView("new-appointment"); }} onCancel={setCancelId} onComplete={setCompleteId} onReschedule={setRescheduleId} currentUser={currentUser} />}
+          {view === "dashboard" && <DashboardView appointments={appointments} activityLog={activityLog} onViewDetail={handleViewDetail} onNewAppointment={() => { setBookingKey(k => k + 1); setEditAptId(null); setAptPreFill(undefined); setView("new-appointment"); }} onNav={setView} currentUser={currentUser} />}
+          {view === "appointments" && <AppointmentsView appointments={appointments} onViewDetail={handleViewDetail} onEdit={handleEdit} onNewAppointment={() => { setBookingKey(k => k + 1); setEditAptId(null); setAptPreFill(undefined); setView("new-appointment"); }} onCancel={setCancelId} onComplete={setCompleteId} onReschedule={setRescheduleId} currentUser={currentUser} initialSearch={globalSearch} />}
           {view === "new-appointment" && (
-            <NewAppointmentView appointments={appointments} onSave={handleSave}
+            <NewAppointmentView key={bookingKey} appointments={appointments} onSave={handleSave}
               onBack={() => setView(editAptId ? prevView : "dashboard")}
               onViewDetail={id => { setSelectedAptId(id); setView("detail"); }}
               onNavDashboard={() => setView("dashboard")}
@@ -1648,10 +1716,10 @@ export default function App() {
           )}
           {view === "detail" && (
             selectedApt
-              ? <AppointmentDetailView apt={selectedApt} activityLog={activityLog} onBack={() => setView(prevView)} onEdit={handleEdit} onCancel={setCancelId} onComplete={setCompleteId} onReschedule={setRescheduleId} currentUser={currentUser} />
+              ? <AppointmentDetailView apt={selectedApt} activityLog={activityLog} onBack={() => setView(prevView)} onEdit={handleEdit} onCancel={setCancelId} onComplete={setCompleteId} onReschedule={setRescheduleId} currentUser={currentUser} onApprovalDone={() => void load(false)} />
               : <div className="p-6 text-slate-500 text-sm flex items-center gap-2"><AlertCircle className="w-4 h-4" /> Appointment not found.</div>
           )}
-          {view === "schedule" && <ScheduleView appointments={appointments} onViewDetail={handleViewDetail} onNewAptFromSlot={handleNewAptFromSlot} defaultView={preferences.calendarView} />}
+          {view === "schedule" && <ScheduleView appointments={appointments} onViewDetail={handleViewDetail} onNewAptFromSlot={handleNewAptFromSlot} defaultView={preferences.calendarView} canCreate={!!canCreate} />}
           {view === "system-history" && currentUser.role === "admin" && <SystemHistory />}
           {view === "history" && <HistoryView appointments={appointments} onViewDetail={handleViewDetail} />}
           {view === "settings" && <SettingsView preferences={preferences} onSavePreferences={savePreferences} currentUser={currentUser} users={users} onUpdateUsers={updateUserActive} onPasswordChanged={() => { setCurrentUser(null); setAppointments([]); setActivityLog([]); setUsers([]); }} />}
