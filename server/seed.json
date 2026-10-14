@@ -1,0 +1,436 @@
+{
+  "EXECUTIVES": [
+    {
+      "id": "exec-1",
+      "name": "Margaret Chen",
+      "title": "Chief Executive Officer",
+      "initials": "MC"
+    },
+    {
+      "id": "exec-2",
+      "name": "Robert Hargrove",
+      "title": "Chief Financial Officer",
+      "initials": "RH"
+    },
+    {
+      "id": "exec-3",
+      "name": "Victoria Santos",
+      "title": "Chief Operating Officer",
+      "initials": "VS"
+    }
+  ],
+  "INITIAL_APPOINTMENTS": [
+    {
+      "id": "APT-001",
+      "clientName": "James Whitfield",
+      "clientOrg": "Global Corp International",
+      "clientEmail": "j.whitfield@globalcorp.com",
+      "clientPhone": "+1 (555) 201-4400",
+      "purpose": "Q3 Financial Review",
+      "notes": "Bring the quarterly performance deck. Mr. Whitfield prefers concise presentations.",
+      "executiveId": "exec-1",
+      "date": "2026-09-08",
+      "startTime": "09:00",
+      "duration": 60,
+      "status": "confirmed",
+      "createdAt": "2026-09-01T09:00:00Z",
+      "updatedAt": "2026-09-01T09:05:00Z",
+      "createdBy": "Sarah Mitchell",
+      "updatedBy": "Sarah Mitchell"
+    },
+    {
+      "id": "APT-002",
+      "clientName": "Elena Martinez",
+      "clientOrg": "Apex Partners LLC",
+      "clientEmail": "e.martinez@apexpartners.com",
+      "clientPhone": "+1 (555) 308-7200",
+      "purpose": "Budget Proposal Discussion",
+      "notes": "Annual budget review for the upcoming fiscal year.",
+      "executiveId": "exec-2",
+      "date": "2026-09-08",
+      "startTime": "11:00",
+      "duration": 45,
+      "status": "confirmed",
+      "createdAt": "2026-09-02T10:00:00Z",
+      "updatedAt": "2026-09-02T10:02:00Z",
+      "createdBy": "Sarah Mitchell",
+      "updatedBy": "Sarah Mitchell"
+    },
+    {
+      "id": "APT-003",
+      "clientName": "David Kim",
+      "clientOrg": "TechVentures Asia",
+      "clientEmail": "d.kim@techventures.asia",
+      "clientPhone": "+1 (555) 445-9100",
+      "purpose": "Partnership Agreement Review",
+      "notes": "Follow-up from last month's initial meeting. Bring draft agreements.",
+      "executiveId": "exec-3",
+      "date": "2026-09-08",
+      "startTime": "14:30",
+      "duration": 30,
+      "status": "pending",
+      "createdAt": "2026-09-05T14:00:00Z",
+      "updatedAt": "2026-09-05T14:00:00Z",
+      "createdBy": "Sarah Mitchell",
+      "updatedBy": "Sarah Mitchell"
+    },
+    {
+      "id": "APT-004",
+      "clientName": "Sophie Anderson",
+      "clientOrg": "Financial Times Media",
+      "clientEmail": "s.anderson@ftmedia.com",
+      "clientPhone": "+1 (555) 562-3400",
+      "purpose": "Media Interview – Q3 Results",
+      "notes": "Approved talking points sent to CEO office on Sept 7.",
+      "executiveId": "exec-1",
+      "date": "2026-09-09",
+      "startTime": "10:00",
+      "duration": 60,
+      "status": "confirmed",
+      "createdAt": "2026-09-03T09:30:00Z",
+      "updatedAt": "2026-09-03T09:32:00Z",
+      "createdBy": "Sarah Mitchell",
+      "updatedBy": "Sarah Mitchell"
+    },
+    {
+      "id": "APT-005",
+      "clientName": "Michael Thompson",
+      "clientOrg": "Meridian Capital Fund",
+      "clientEmail": "m.thompson@meridiancap.com",
+      "clientPhone": "+1 (555) 678-0200",
+      "purpose": "Investment Strategy Briefing",
+      "notes": "Confidential. No external recording.",
+      "executiveId": "exec-2",
+      "date": "2026-09-10",
+      "startTime": "09:30",
+      "duration": 90,
+      "status": "confirmed",
+      "createdAt": "2026-09-01T11:00:00Z",
+      "updatedAt": "2026-09-01T11:02:00Z",
+      "createdBy": "Sarah Mitchell",
+      "updatedBy": "Sarah Mitchell"
+    },
+    {
+      "id": "APT-006",
+      "clientName": "Clara Bennett",
+      "clientOrg": "Nexus Group Holdings",
+      "clientEmail": "c.bennett@nexusgroup.com",
+      "clientPhone": "+1 (555) 731-5600",
+      "purpose": "Operations Efficiency Briefing",
+      "notes": "Include supply chain restructuring proposal in agenda.",
+      "executiveId": "exec-3",
+      "date": "2026-09-11",
+      "startTime": "15:00",
+      "duration": 60,
+      "status": "pending",
+      "createdAt": "2026-09-06T13:00:00Z",
+      "updatedAt": "2026-09-06T13:00:00Z",
+      "createdBy": "Sarah Mitchell",
+      "updatedBy": "Sarah Mitchell"
+    },
+    {
+      "id": "APT-007",
+      "clientName": "Thomas Reed",
+      "clientOrg": "Reed & Associates",
+      "clientEmail": "t.reed@reedassoc.com",
+      "clientPhone": "+1 (555) 842-1100",
+      "purpose": "Board Member Quarterly Meeting",
+      "notes": "Recurring quarterly check-in. Board room reserved.",
+      "executiveId": "exec-1",
+      "date": "2026-09-12",
+      "startTime": "11:00",
+      "duration": 45,
+      "status": "confirmed",
+      "createdAt": "2026-08-15T09:00:00Z",
+      "updatedAt": "2026-08-15T09:02:00Z",
+      "createdBy": "Sarah Mitchell",
+      "updatedBy": "Sarah Mitchell"
+    },
+    {
+      "id": "APT-008",
+      "clientName": "Aria Patel",
+      "clientOrg": "Patel Ventures",
+      "clientEmail": "a.patel@patelventures.com",
+      "clientPhone": "+1 (555) 901-3300",
+      "purpose": "Investor Relations Update",
+      "notes": "Quarterly investor update meeting.",
+      "executiveId": "exec-1",
+      "date": "2026-09-04",
+      "startTime": "10:00",
+      "duration": 60,
+      "status": "completed",
+      "createdAt": "2026-08-20T10:00:00Z",
+      "updatedAt": "2026-09-04T11:05:00Z",
+      "createdBy": "Sarah Mitchell",
+      "updatedBy": "Sarah Mitchell"
+    },
+    {
+      "id": "APT-009",
+      "clientName": "Lucas Rivera",
+      "clientOrg": "Rivera Tax Consultants",
+      "clientEmail": "l.rivera@riveratax.com",
+      "clientPhone": "+1 (555) 023-6700",
+      "purpose": "Annual Tax Planning Session",
+      "notes": "Year-end tax strategy review.",
+      "executiveId": "exec-2",
+      "date": "2026-09-02",
+      "startTime": "14:00",
+      "duration": 90,
+      "status": "completed",
+      "createdAt": "2026-08-18T14:00:00Z",
+      "updatedAt": "2026-09-02T15:35:00Z",
+      "createdBy": "Sarah Mitchell",
+      "updatedBy": "Sarah Mitchell"
+    },
+    {
+      "id": "APT-010",
+      "clientName": "Grace Tanaka",
+      "clientOrg": "Horizon Suppliers Ltd",
+      "clientEmail": "g.tanaka@horizonsup.com",
+      "clientPhone": "+1 (555) 145-8800",
+      "purpose": "Vendor Contract Negotiation",
+      "notes": "Price renegotiation for equipment contracts.",
+      "executiveId": "exec-3",
+      "date": "2026-08-29",
+      "startTime": "09:00",
+      "duration": 60,
+      "status": "cancelled",
+      "cancellationReason": "Client unable to attend. To be rescheduled.",
+      "createdAt": "2026-08-10T09:00:00Z",
+      "updatedAt": "2026-08-28T17:30:00Z",
+      "createdBy": "Sarah Mitchell",
+      "updatedBy": "Sarah Mitchell"
+    },
+    {
+      "id": "APT-011",
+      "clientName": "Nathan Brooks",
+      "clientOrg": "Brooks Legal Group",
+      "clientEmail": "n.brooks@brookslegal.com",
+      "clientPhone": "+1 (555) 267-4400",
+      "purpose": "Legal Strategy Consultation",
+      "notes": "Regarding ongoing litigation review.",
+      "executiveId": "exec-1",
+      "date": "2026-09-15",
+      "startTime": "13:00",
+      "duration": 60,
+      "status": "rescheduled",
+      "previousDate": "2026-09-10",
+      "previousStartTime": "10:00",
+      "createdAt": "2026-09-01T10:00:00Z",
+      "updatedAt": "2026-09-07T09:00:00Z",
+      "createdBy": "Sarah Mitchell",
+      "updatedBy": "Sarah Mitchell"
+    }
+  ],
+  "INITIAL_USERS": [
+    {
+      "id": "user-1",
+      "name": "Sarah Mitchell",
+      "email": "sarah.mitchell@meridian.com",
+      "role": "assistant",
+      "title": "Executive Assistant",
+      "active": true,
+      "initials": "SM"
+    },
+    {
+      "id": "user-2",
+      "name": "Margaret Chen",
+      "email": "margaret.chen@meridian.com",
+      "role": "executive",
+      "title": "Chief Executive Officer",
+      "active": true,
+      "initials": "MC"
+    },
+    {
+      "id": "user-3",
+      "name": "Robert Hargrove",
+      "email": "robert.hargrove@meridian.com",
+      "role": "executive",
+      "title": "Chief Financial Officer",
+      "active": true,
+      "initials": "RH"
+    },
+    {
+      "id": "user-4",
+      "name": "Victoria Santos",
+      "email": "victoria.santos@meridian.com",
+      "role": "executive",
+      "title": "Chief Operating Officer",
+      "active": true,
+      "initials": "VS"
+    },
+    {
+      "id": "user-5",
+      "name": "James Alderton",
+      "email": "j.alderton@meridian.com",
+      "role": "admin",
+      "title": "System Administrator",
+      "active": true,
+      "initials": "JA"
+    }
+  ],
+  "INITIAL_ACTIVITY": [
+    {
+      "id": "ACT-001",
+      "aptId": "APT-001",
+      "action": "created",
+      "user": "Sarah Mitchell",
+      "timestamp": "2026-09-01T09:00:00Z",
+      "clientName": "James Whitfield"
+    },
+    {
+      "id": "ACT-002",
+      "aptId": "APT-001",
+      "action": "confirmed",
+      "user": "Sarah Mitchell",
+      "timestamp": "2026-09-01T09:05:00Z",
+      "clientName": "James Whitfield"
+    },
+    {
+      "id": "ACT-003",
+      "aptId": "APT-002",
+      "action": "created",
+      "user": "Sarah Mitchell",
+      "timestamp": "2026-09-02T10:00:00Z",
+      "clientName": "Elena Martinez"
+    },
+    {
+      "id": "ACT-004",
+      "aptId": "APT-002",
+      "action": "confirmed",
+      "user": "Sarah Mitchell",
+      "timestamp": "2026-09-02T10:02:00Z",
+      "clientName": "Elena Martinez"
+    },
+    {
+      "id": "ACT-005",
+      "aptId": "APT-003",
+      "action": "created",
+      "user": "Sarah Mitchell",
+      "timestamp": "2026-09-05T14:00:00Z",
+      "clientName": "David Kim"
+    },
+    {
+      "id": "ACT-006",
+      "aptId": "APT-004",
+      "action": "created",
+      "user": "Sarah Mitchell",
+      "timestamp": "2026-09-03T09:30:00Z",
+      "clientName": "Sophie Anderson"
+    },
+    {
+      "id": "ACT-007",
+      "aptId": "APT-004",
+      "action": "confirmed",
+      "user": "Sarah Mitchell",
+      "timestamp": "2026-09-03T09:32:00Z",
+      "clientName": "Sophie Anderson"
+    },
+    {
+      "id": "ACT-008",
+      "aptId": "APT-005",
+      "action": "created",
+      "user": "Sarah Mitchell",
+      "timestamp": "2026-09-01T11:00:00Z",
+      "clientName": "Michael Thompson"
+    },
+    {
+      "id": "ACT-009",
+      "aptId": "APT-005",
+      "action": "confirmed",
+      "user": "Sarah Mitchell",
+      "timestamp": "2026-09-01T11:02:00Z",
+      "clientName": "Michael Thompson"
+    },
+    {
+      "id": "ACT-010",
+      "aptId": "APT-006",
+      "action": "created",
+      "user": "Sarah Mitchell",
+      "timestamp": "2026-09-06T13:00:00Z",
+      "clientName": "Clara Bennett"
+    },
+    {
+      "id": "ACT-011",
+      "aptId": "APT-007",
+      "action": "created",
+      "user": "Sarah Mitchell",
+      "timestamp": "2026-08-15T09:00:00Z",
+      "clientName": "Thomas Reed"
+    },
+    {
+      "id": "ACT-012",
+      "aptId": "APT-007",
+      "action": "confirmed",
+      "user": "Sarah Mitchell",
+      "timestamp": "2026-08-15T09:02:00Z",
+      "clientName": "Thomas Reed"
+    },
+    {
+      "id": "ACT-013",
+      "aptId": "APT-008",
+      "action": "created",
+      "user": "Sarah Mitchell",
+      "timestamp": "2026-08-20T10:00:00Z",
+      "clientName": "Aria Patel"
+    },
+    {
+      "id": "ACT-014",
+      "aptId": "APT-008",
+      "action": "completed",
+      "user": "Sarah Mitchell",
+      "timestamp": "2026-09-04T11:05:00Z",
+      "clientName": "Aria Patel"
+    },
+    {
+      "id": "ACT-015",
+      "aptId": "APT-009",
+      "action": "created",
+      "user": "Sarah Mitchell",
+      "timestamp": "2026-08-18T14:00:00Z",
+      "clientName": "Lucas Rivera"
+    },
+    {
+      "id": "ACT-016",
+      "aptId": "APT-009",
+      "action": "completed",
+      "user": "Sarah Mitchell",
+      "timestamp": "2026-09-02T15:35:00Z",
+      "clientName": "Lucas Rivera"
+    },
+    {
+      "id": "ACT-017",
+      "aptId": "APT-010",
+      "action": "created",
+      "user": "Sarah Mitchell",
+      "timestamp": "2026-08-10T09:00:00Z",
+      "clientName": "Grace Tanaka"
+    },
+    {
+      "id": "ACT-018",
+      "aptId": "APT-010",
+      "action": "cancelled",
+      "user": "Sarah Mitchell",
+      "timestamp": "2026-08-28T17:30:00Z",
+      "clientName": "Grace Tanaka",
+      "note": "Client unable to attend."
+    },
+    {
+      "id": "ACT-019",
+      "aptId": "APT-011",
+      "action": "created",
+      "user": "Sarah Mitchell",
+      "timestamp": "2026-09-01T10:00:00Z",
+      "clientName": "Nathan Brooks"
+    },
+    {
+      "id": "ACT-020",
+      "aptId": "APT-011",
+      "action": "rescheduled",
+      "user": "Sarah Mitchell",
+      "timestamp": "2026-09-07T09:00:00Z",
+      "clientName": "Nathan Brooks",
+      "note": "Moved from Sept 10 to Sept 15"
+    }
+  ]
+}

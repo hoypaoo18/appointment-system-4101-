@@ -1,0 +1,28 @@
+Hostinger Web App deployment repair — October 14, 2026
+
+Original screenshot error: vite: command not found
+Cause identified: Vite, Tailwind, and React build plugins were devDependencies;
+Hostinger may omit devDependencies when it installs production packages.
+
+Applied:
+- Promoted Vite, React plugin, Tailwind plugin, Tailwind, React and React DOM
+  to package.json regular dependencies; synchronized root lock entries and
+  deployment dependency flags.
+- Frontend build no longer depends on connecting to MySQL.
+- Production server automatically initializes the selected, existing
+  Hostinger MySQL schema and first administrator on startup.
+- No destructive database resets added.
+- Build directory and environment paths corrected for differing working dirs.
+- Updated full Hostinger redeployment guide.
+
+Local validation:
+  node --test tests/deployment-smoke.test.mjs => 3 passed, 0 failed
+  node --check server/*.mjs => all passed
+  React dist/ has already compiled CSS/JS and the index.html references exist
+
+Limitations: npm registry and Hostinger/MySQL service inaccessible from this
+execution environment. Fresh npm ci, a full NEW vite build, Hostinger startup,
+first DB connection, and production site behavior are NOT yet verified.
+
+No live Hostinger deployment was performed. All .env.production credential
+values remain placeholders (no secret credentials imported into this ZIP).

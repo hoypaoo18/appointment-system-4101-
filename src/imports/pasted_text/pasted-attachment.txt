@@ -1,0 +1,448 @@
+Design a modern, professional, responsive web-based Executive Appointment System.
+
+The system is designed primarily for an Executive Assistant/Secretary who manages appointments for an executive. The Executive has view-only access, while an Administrator manages user accounts and basic system configuration.
+
+The primary purpose of the system is to centralize executive appointment records and allow the Executive Assistant to create, check availability, confirm, update, reschedule, cancel, search, monitor, and complete appointments.
+
+DESIGN STYLE
+
+Create a professional corporate administrative dashboard.
+
+Visual direction:
+- Modern enterprise SaaS dashboard
+- Clean and minimal interface
+- Professional executive-office aesthetic
+- Spacious layout
+- Clear visual hierarchy
+- Desktop-first responsive design
+- Also support tablet and mobile widths
+- Use a neutral professional color palette
+- Use one restrained primary accent color
+- Avoid excessive gradients, decorations, illustrations, or unnecessary animations
+- Use modern sans-serif typography
+- Rounded cards with subtle borders and shadows
+- Clear icons for actions
+- Strong accessibility and readable contrast
+- Status must be communicated using both icon and text, not color alone
+
+LAYOUT
+
+Use a persistent left sidebar navigation on desktop.
+
+Sidebar navigation:
+1. Dashboard
+2. Appointments
+3. Schedule
+4. History
+5. Settings
+
+At the bottom of the sidebar:
+- User profile
+- Role
+- Logout
+
+Top navigation:
+- Page title
+- Search where appropriate
+- Notification icon
+- User profile menu
+
+DASHBOARD
+
+Create an executive appointment management dashboard.
+
+Top section:
+- Welcome message
+- Current date
+- "New Appointment" primary button
+
+KPI cards:
+- Total Appointments
+- Today's Appointments
+- Pending
+- Upcoming
+- Completed
+- Cancelled
+
+Main dashboard content:
+- Today's Schedule
+- Upcoming Appointments
+- Calendar preview
+- Appointment status summary
+- Recent appointment activity
+
+Appointment table columns:
+- Client/Visitor
+- Organization
+- Meeting Purpose
+- Executive
+- Date
+- Time
+- Duration
+- Status
+- Actions
+
+Use quick actions:
+- View
+- Edit
+- Reschedule
+- Cancel
+- Complete
+
+APPOINTMENTS PAGE
+
+Create an appointment management page.
+
+Header:
+- "Appointments"
+- Search appointments
+- Filter
+- New Appointment button
+
+Filters:
+- Date
+- Status
+- Executive
+- Client/Visitor
+- Organization
+
+Tabs or filters:
+- All
+- Today
+- Upcoming
+- Pending
+- Confirmed
+- Rescheduled
+- Completed
+- Cancelled
+
+Display appointments in a clean table.
+
+ADD APPOINTMENT
+
+Create a multi-section appointment form.
+
+Section 1: Client Information
+- Client/Visitor Name
+- Organization
+- Email
+- Phone
+
+Section 2: Meeting Information
+- Meeting Purpose
+- Notes
+
+Section 3: Schedule
+- Executive
+- Appointment Date
+- Start Time
+- Duration
+- End Time
+
+Availability behavior:
+After selecting the executive, date, and time, check availability.
+
+Display:
+- Available
+- Conflict
+
+If the selected time conflicts with another active appointment, clearly show:
+"Conflict: The selected executive already has an appointment during this time."
+
+Do not allow the user to confirm a conflicting appointment.
+
+Allow back-to-back appointments when one appointment ends exactly when another begins.
+
+Before saving, show an appointment confirmation/review screen containing:
+- Client
+- Organization
+- Meeting purpose
+- Executive
+- Date
+- Start time
+- End time
+- Duration
+- Notes
+
+Buttons:
+- Back / Edit
+- Confirm Appointment
+
+APPOINTMENT DETAILS
+
+Create a detailed appointment page.
+
+Display:
+- Appointment ID
+- Client/Visitor
+- Organization
+- Contact information
+- Meeting purpose
+- Executive
+- Date
+- Start time
+- End time
+- Duration
+- Notes
+- Status
+- Created date
+- Last updated
+- Created by
+- Updated by
+
+Action buttons should depend on appointment status and user role.
+
+For active appointments:
+- Edit
+- Reschedule
+- Cancel
+- Mark as Completed
+
+For completed appointments:
+- View only
+
+For cancelled appointments:
+- View history/details only
+
+RESCHEDULE
+
+Create a rescheduling workflow.
+
+Show current appointment information.
+
+Allow the user to select:
+- New date
+- New start time
+- Duration/end time
+
+Check availability again before saving.
+
+Display available and conflicting time slots.
+
+Show confirmation modal before saving.
+
+After confirmation:
+- Update the schedule
+- Change status to Rescheduled
+- Preserve the appointment history
+
+CANCEL APPOINTMENT
+
+Create a cancellation confirmation modal.
+
+Display:
+"Are you sure you want to cancel this appointment?"
+
+Show:
+- Client
+- Date
+- Time
+- Executive
+
+Optional:
+- Cancellation Reason
+
+Buttons:
+- Keep Appointment
+- Confirm Cancellation
+
+After cancellation:
+- Remove appointment from active schedule
+- Keep the record in History
+- Status becomes Cancelled
+
+COMPLETE APPOINTMENT
+
+Create a confirmation modal:
+
+"Mark this appointment as completed?"
+
+Show appointment summary.
+
+Buttons:
+- Cancel
+- Mark as Completed
+
+Completed appointments should move into appointment history.
+
+SCHEDULE / CALENDAR
+
+Create a professional executive calendar.
+
+Provide:
+- Day view
+- Week view
+- Date navigation
+- Today button
+
+Show:
+- Occupied appointments
+- Available periods
+- Client name
+- Meeting purpose
+- Start and end time
+- Appointment status
+
+Selecting an appointment opens its details.
+
+Make available periods visually distinct from occupied periods.
+
+HISTORY
+
+Create an appointment history page.
+
+Display completed and cancelled appointments.
+
+Search and filter by:
+- Client
+- Date
+- Status
+
+Columns:
+- Client
+- Meeting Purpose
+- Date
+- Time
+- Executive
+- Status
+- Actions
+
+Historical records should normally be read-only.
+
+SETTINGS
+
+Create a settings page with:
+- Profile Information
+- Display Name
+- Email
+- Change Password
+- Account Status
+
+For administrators:
+- User Management
+- Add User
+- Edit User
+- Activate/Deactivate User
+- Assign Role
+
+ROLES AND PERMISSIONS
+
+Executive Assistant:
+- Full appointment management
+- Create
+- View
+- Search
+- Update
+- Reschedule
+- Cancel
+- Complete
+- Manage client information
+- Check availability
+
+Executive:
+- View dashboard
+- View schedule
+- View appointment details
+- No create/edit/reschedule/cancel/complete actions
+
+Administrator:
+- Manage authorized user accounts
+- Manage roles
+- Activate/deactivate users
+- Basic configuration
+- No appointment editing unless explicitly authorized
+
+VALIDATION AND ERROR STATES
+
+Design UI states for:
+- Empty required field
+- Invalid email
+- Invalid phone
+- Past date
+- Invalid time
+- Invalid duration
+- Schedule conflict
+- Failed availability check
+- Failed save
+- Unauthorized action
+- Appointment not found
+- No search results
+- Session expired
+
+Use clear inline validation messages.
+
+SECURITY
+
+Protected pages require authentication.
+
+Do not expose appointment records to unauthorized users.
+
+Use confirmation dialogs for:
+- Cancel
+- Reschedule
+- Complete
+
+RESPONSIVE DESIGN
+
+Create responsive layouts for:
+- Desktop 1440px
+- Tablet 768px
+- Mobile 360px
+
+Desktop should use sidebar navigation.
+
+Mobile should use compact navigation or a mobile menu.
+
+Tables should become responsive cards or controlled horizontal scrolling on small screens.
+
+ACCESSIBILITY
+
+- Clear form labels
+- Keyboard-accessible controls
+- Visible focus states
+- Readable text
+- Adequate contrast
+- Do not use color as the only indicator of appointment status
+- Buttons should have clear action labels
+
+PROTOTYPE FLOW
+
+Create an interactive prototype for this main workflow:
+
+Login
+→ Dashboard
+→ New Appointment
+→ Enter Client Details
+→ Select Executive
+→ Select Date/Time
+→ Check Availability
+→ Review Appointment
+→ Confirm Appointment
+→ Appointment Details
+→ Schedule
+
+Also prototype:
+
+Appointment List
+→ Appointment Details
+→ Edit
+
+Appointment Details
+→ Reschedule
+→ Select New Date/Time
+→ Check Availability
+→ Confirm
+→ Updated Appointment
+
+Appointment Details
+→ Cancel
+→ Confirmation
+→ Cancelled
+
+Appointment Details
+→ Mark Completed
+→ Confirmation
+→ Completed
+→ History
+
+The final Figma design should look like a realistic production-ready executive scheduling system rather than a generic calendar application.
