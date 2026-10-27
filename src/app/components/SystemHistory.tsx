@@ -8,7 +8,7 @@ interface Entry {
   entityType: string; entityId: string | null; ip: string | null;
   details: Record<string, unknown>;
 }
-const field = 'px-3 py-2 text-sm rounded-xl border border-slate-200 bg-white/70';
+const field = 'ui-input px-3 py-2 text-sm rounded-lg border border-slate-200 bg-white';
 const actionLabel = (action: string) => action.replaceAll('.', ' · ').replaceAll('_', ' ');
 const labels: Record<string, string> = { date: 'Date', startTime: 'Start time', duration: 'Duration (minutes)', executiveId: 'Executive', status: 'Status', active: 'Account active' };
 function Changes({ details }: { details: Record<string, unknown> }) {
@@ -45,11 +45,11 @@ export function SystemHistory() {
   }, [page, search, action, outcome, from, to, refresh]);
   const pages = Math.max(1, Math.ceil(total / 50));
   return <div className="p-4 md:p-6 space-y-4">
-    <div className="flex items-center justify-between gap-3">
+    <div className="flex items-center justify-between flex-wrap gap-3">
       <div><h1 className="text-xl font-semibold text-slate-900">System History</h1><p className="text-sm text-slate-500">Sign-ins, account changes, and appointment activity. Times shown in Manila time.</p></div>
       <button className={field + ' flex gap-2 items-center'} onClick={() => setRefresh(value => value + 1)}><RefreshCw className="w-4 h-4" />Refresh</button>
     </div>
-    <div className="bg-white/70 border border-white/60 rounded-2xl p-4 flex flex-wrap items-end gap-3">
+    <div className="audit-filters ui-surface rounded-xl p-4 flex flex-wrap items-end gap-3">
       <label className="text-xs text-slate-500">Search<div className="relative mt-1"><Search className="absolute left-3 top-2.5 w-4 h-4" /><input aria-label="Search system history" className={field + ' pl-9'} placeholder="User, action, or record ID" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} /></div></label>
       <label className="text-xs text-slate-500">Action<select aria-label="Audit action" className={field + ' block mt-1'} value={action} onChange={e => { setAction(e.target.value); setPage(1); }}><option value="">All actions</option>{actions.map(value => <option key={value} value={value}>{actionLabel(value)}</option>)}</select></label>
       <label className="text-xs text-slate-500">Result<select aria-label="Audit result" className={field + ' block mt-1'} value={outcome} onChange={e => { setOutcome(e.target.value); setPage(1); }}><option value="">All results</option><option value="success">Success</option><option value="failure">Failure</option><option value="denied">Denied</option></select></label>
@@ -57,7 +57,7 @@ export function SystemHistory() {
       <label className="text-xs text-slate-500">To<input aria-label="Audit end date" type="date" className={field + ' block mt-1'} value={to} min={from || undefined} onChange={e => { setTo(e.target.value); setPage(1); }} /></label>
     </div>
     {error ? <div role="alert" className="text-red-700 bg-red-50 p-4 rounded-xl">{error}<button className="ml-3 underline" onClick={() => setRefresh(value => value + 1)}>Retry</button></div> : loading ? <p role="status">Loading system history…</p> : <>
-      <div className="bg-white/70 border border-white/60 rounded-2xl overflow-x-auto">
+      <div className="ui-surface rounded-xl overflow-x-auto">
         <table className="w-full text-sm"><thead className="text-xs text-slate-500 bg-white/40"><tr>{['Time (Manila)','User','Action','Result','Record','IP address','Changes'].map(label => <th key={label} className="p-3 text-left whitespace-nowrap">{label}</th>)}</tr></thead>
           <tbody className="divide-y divide-slate-100">{entries.map(entry => <tr key={entry.id}>
             <td className="p-3 whitespace-nowrap">{new Date(entry.timestamp).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}</td>

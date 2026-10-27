@@ -22,5 +22,5 @@ export function AccessibleDialog({ title, onClose, children }: { title: string; 
     document.addEventListener('keydown', handle);
     return () => { document.removeEventListener('keydown', handle); for(const state of oldStates){state.e.inert=state.inert;if(state.hidden===null)state.e.removeAttribute('aria-hidden');else state.e.setAttribute('aria-hidden',state.hidden);} if (previous?.isConnected) previous.focus(); };
   }, []);
-  return createPortal(<div ref={root} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto [&>div.relative]:my-auto">{children}</div>,document.body);
+  return createPortal(<div ref={root} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} className="ui-dialog fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto [&>div.relative]:my-auto">{children}</div>,document.body);
 }

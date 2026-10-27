@@ -7,7 +7,8 @@ import { auditStore } from './audit.mjs';
 import { parseDatabaseJson } from './db-json.mjs';
 import { isProduction, validateProductionConfig } from './config.mjs';
 import { notificationStore } from './notifications.mjs';
-import { schedulingStore, checkSchedule } from './scheduling.mjs';
+import { schedulingStore } from './scheduling.mjs';
+import { canCompleteAppointment, slotAvailability } from '../shared/appointment-rules.mjs';
 
 export const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
@@ -112,10 +113,11 @@ export async function openDatabase(options = {}) {
       if (typeof a.notes !== 'string' || a.notes.length > 10000) fail('Invalid notes');
       if (!(await db.prepare('SELECT id FROM executives WHERE id = ?').get(a.executiveId))) fail('Invalid executive');
       const policy = await scheduling.get(a.executiveId);
-      checkSchedule(a,policy);
-      const conflict = await db.prepare(`SELECT id FROM appointments WHERE executive_id = ? AND date = ? AND id != ?
-        AND status NOT IN ('cancelled','completed') AND start_min < ? AND start_min + duration > ?`).get(a.executiveId, a.date, a.id, minutes(a.startTime) + a.duration + policy.bufferMinutes, minutes(a.startTime) - policy.bufferMinutes);
-      if (conflict) fail(`Schedule conflict with ${conflict.id}. Choose another time.`, 409);
+      const existing = await db.prepare("SELECT data FROM appointments WHERE executive_id = ? AND date = ? AND status NOT IN ('cancelled','completed')").all(a.executiveId, a.date);
+      const availability = slotAvailability(a, policy, existing.map(row => parseDatabaseJson(row.data)), {
+        allowPast: !!old && old.date === a.date && old.startTime === a.startTime,
+      });
+      if (!availability.available) fail(availability.reason, availability.status);
     };
     const write = async a => await db.prepare('UPDATE appointments SET executive_id=?, date=?, start_min=?, duration=?, status=?, data=? WHERE id=?').run(a.executiveId,a.date,minutes(a.startTime),a.duration,a.status,JSON.stringify(a),a.id);
     return {
@@ -158,7 +160,7 @@ export async function openDatabase(options = {}) {
             }else{await validate(a,old);a.status='confirmed';}
           } else if (action === 'complete') {
             if(a.status==='pending'&&(await scheduling.get(a.executiveId)).requireApproval)fail('Approve the appointment before completing it',409);
-            if (a.date > today()) fail('Future appointments cannot be completed');
+            if (!canCompleteAppointment(a)) fail('Appointments can only be completed after their scheduled end time', 409);
             a.status = 'completed';
           } else if (action === 'reschedule') {
             a.previousDate = old.date; a.previousStartTime = old.startTime;
