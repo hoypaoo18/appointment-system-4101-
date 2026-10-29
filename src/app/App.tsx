@@ -12,7 +12,7 @@ import { Toaster, toast } from "sonner";
 import {
   LayoutDashboard, CalendarDays, ClipboardList, History as HistoryIcon,
   Settings, LogOut, Bell, Search, Plus, ChevronLeft, ChevronRight,
-  Eye, Pencil, RefreshCw, X, CheckCircle2, AlertCircle,
+  Eye, EyeOff, Pencil, RefreshCw, X, CheckCircle2, AlertCircle,
   User, FileText, Check, ArrowLeft, Users, Calendar, XCircle, Activity,
   Mail, Phone, BriefcaseIcon, TrendingUp, BarChart3, CheckCheck, Ban, Zap,
 } from "lucide-react";
@@ -81,8 +81,8 @@ function getExec(id: string) { return EXECUTIVES.find(e => e.id === id); }
 const STATUS_CFG: Record<Status, { label: string; cls: string; dot: string }> = {
   pending:     { label: "Pending",     cls: "bg-amber-50/80 text-amber-700 border-amber-200/80",       dot: "bg-amber-400" },
   confirmed:   { label: "Confirmed",   cls: "bg-emerald-50/80 text-emerald-700 border-emerald-200/80", dot: "bg-emerald-500" },
-  rescheduled: { label: "Rescheduled", cls: "bg-blue-50/80 text-blue-700 border-blue-200/80",          dot: "bg-blue-500" },
-  completed:   { label: "Completed",   cls: "bg-slate-100/80 text-slate-600 border-slate-300/80",      dot: "bg-slate-400" },
+  rescheduled: { label: "Rescheduled", cls: "bg-violet-50/80 text-violet-700 border-violet-200/80",    dot: "bg-violet-500" },
+  completed:   { label: "Completed",   cls: "bg-blue-50/80 text-blue-700 border-blue-200/80",          dot: "bg-blue-500" },
   cancelled:   { label: "Cancelled",   cls: "bg-red-50/80 text-red-700 border-red-200/80",             dot: "bg-red-400" },
 };
 
@@ -111,7 +111,7 @@ const inpErr = `${inp} border-red-300 bg-red-50`;
 function StatusBadge({ status }: { status: Status }) {
   const c = STATUS_CFG[status];
   return (
-    <span className={`status-badge inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium rounded-full border backdrop-blur-sm ${c.cls}`}>
+    <span data-status={status} className={`status-badge inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium rounded-full border backdrop-blur-sm ${c.cls}`}>
       <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${c.dot}`} />
       {c.label}
     </span>
@@ -235,7 +235,7 @@ function FloatingHeader({ title, currentUser, onNewAppointment, canCreate, onOpe
           </div>
           {!STATIC_PREVIEW && <NotificationBell userId={currentUser.id} onOpenAppointment={onOpenAppointment} />}
           {canCreate && (
-            <button onClick={onNewAppointment} className="ui-button-primary flex items-center gap-2 px-3 sm:px-4 py-2.5 rounded-lg text-sm font-semibold">
+            <button onClick={onNewAppointment} className="appointment-cta ui-button-primary flex items-center gap-2 px-3 sm:px-4 py-2.5 rounded-lg text-sm font-semibold">
               <Plus className="w-4 h-4" /><span className="sm:hidden">New</span><span className="hidden sm:inline">New Appointment</span>
             </button>
           )}
@@ -432,6 +432,7 @@ function RescheduleModal({ apt, appointments, onConfirm, onClose }: { apt: Appoi
 function LoginView({ onLogin }: { onLogin: (user: AppUser) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [demoOpen, setDemoOpen] = useState(false);
   const [error, setError] = useState("");
   const [accounts, setAccounts] = useState<AppUser[]>([]);
@@ -491,7 +492,12 @@ function LoginView({ onLogin }: { onLogin: (user: AppUser) => void }) {
               <label htmlFor="login-password" className="block text-sm font-medium text-slate-700">Password</label>
               <button type="button" className="text-xs text-blue-600 hover:underline">Forgot password?</button>
             </div>
-            <input id="login-password" required autoComplete="current-password" type="password" value={password} onChange={e => { setPassword(e.target.value); setError(""); }} placeholder="••••••••" className={inpOk} />
+            <div className="login-password-control">
+              <input id="login-password" required autoComplete="current-password" type={showPassword ? "text" : "password"} value={password} onChange={e => { setPassword(e.target.value); setError(""); }} placeholder="••••••••" className={inpOk} />
+              <button type="button" className="password-visibility-toggle" aria-label={showPassword ? "Hide password" : "Show password"} aria-controls="login-password" onClick={() => setShowPassword(visible => !visible)}>
+                {showPassword ? <EyeOff className="w-[18px] h-[18px]" aria-hidden="true" /> : <Eye className="w-[18px] h-[18px]" aria-hidden="true" />}
+              </button>
+            </div>
           </div>
           {error && <div className="p-3 bg-red-50/80 border border-red-200/70 rounded-xl text-sm text-red-700 flex items-center gap-2"><AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}</div>}
           <button type="submit" disabled={busy} className="ui-button-primary w-full font-semibold py-3 rounded-lg text-sm">{busy ? "Signing in…" : "Sign In"}</button>
@@ -525,9 +531,9 @@ function LoginView({ onLogin }: { onLogin: (user: AppUser) => void }) {
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
-function DashboardView({ appointments, activityLog, onViewDetail, onNewAppointment, onNav, currentUser }: {
+function DashboardView({ appointments, activityLog, onViewDetail, onNav, currentUser }: {
   appointments: Appointment[]; activityLog: ActivityEntry[];
-  onViewDetail: (id: string) => void; onNewAppointment: () => void; onNav: (v: AppView) => void; currentUser: AppUser;
+  onViewDetail: (id: string) => void; onNav: (v: AppView) => void; currentUser: AppUser;
 }) {
   const todayApts = appointments.filter(a => a.date === TODAY && a.status !== "cancelled");
   const recentActivity = [...activityLog].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).slice(0, 8);
@@ -548,21 +554,25 @@ function DashboardView({ appointments, activityLog, onViewDetail, onNewAppointme
   return (
     <div className="dashboard-page p-4 md:p-6 space-y-6">
       <div className="dashboard-welcome flex items-start justify-between flex-wrap gap-4">
+        <div className="dashboard-header-art" aria-hidden="true">
+          <svg viewBox="0 0 560 220" fill="none" preserveAspectRatio="xMidYMid slice">
+            <path d="M40 225C120 225 118 36 254 53S363 238 570 92" stroke="#DCE4FF" strokeWidth="46" />
+            <path d="M113 239C186 209 164 62 300 79S421 258 594 123" stroke="#EBE9FC" strokeWidth="30" />
+            <path d="M210 236C286 196 256 95 380 106S473 221 590 167" stroke="#CCD9FC" strokeOpacity=".6" strokeWidth="1.5" />
+            <circle cx="426" cy="38" r="10" fill="#D4DEFC" />
+            <circle cx="170" cy="38" r="4" fill="#BACAF7" />
+          </svg>
+        </div>
         <div>
           <p className="dashboard-date eyebrow mb-2">{todayDisplay}</p>
           <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">Good morning, {currentUser.name.split(" ")[0]}</h1>
           <p className="text-sm text-slate-500 mt-2">Here's what's happening with your appointments today.</p>
         </div>
-        {currentUser.role === "assistant" && !STATIC_PREVIEW && (
-          <button onClick={onNewAppointment} className="ui-button-primary flex items-center gap-2 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-all">
-            <Plus className="w-4 h-4" /> New Appointment
-          </button>
-        )}
       </div>
 
       <div className="kpi-grid dashboard-stats">
         {[kpis[1], kpis[2], kpis[3], kpis[0]].map(k => (
-          <div key={k.label} className={`kpi-card ${glass} rounded-xl`}>
+          <div key={k.label} data-metric={k.label.toLowerCase()} className={`kpi-card ${glass} rounded-xl`}>
             <div className="dashboard-stat-top">
               <div className={`dashboard-stat-icon w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${k.bg}`}>
                 <k.Icon className={`w-4 h-4 ${k.cls}`} />
@@ -608,20 +618,19 @@ function DashboardView({ appointments, activityLog, onViewDetail, onNewAppointme
         </div>
 
         <div className={`dashboard-summary ${glass} rounded-xl overflow-hidden`}>
-          <div className="dashboard-card-header"><div><h3>Status Summary</h3><p>All appointments by status</p></div></div>
-          <div className="p-5 space-y-4">
+          <div className="dashboard-card-header"><div><h3>Status Summary</h3><p>All appointments by status</p></div><div className="dashboard-summary-total"><strong className="tabular-nums">{appointments.length}</strong><span>Total</span></div></div>
+          <div className="dashboard-status-list">
             {(["confirmed","pending","rescheduled","completed","cancelled"] as Status[]).map(s => {
               const count = appointments.filter(a => a.status === s).length;
               const pct = appointments.length > 0 ? (count / appointments.length) * 100 : 0;
-              const bar = { confirmed:"bg-emerald-500", pending:"bg-amber-400", rescheduled:"bg-blue-500", completed:"bg-slate-400", cancelled:"bg-red-400" }[s];
               return (
-                <div key={s}>
-                  <div className="flex justify-between text-xs mb-1.5">
-                    <span className="text-slate-600 font-medium">{STATUS_CFG[s].label}</span>
-                    <span className="font-semibold text-slate-800">{count}</span>
+                <div key={s} data-status={s} className="dashboard-status-item">
+                  <div className="dashboard-status-heading">
+                    <span className="dashboard-status-label"><span aria-hidden="true" />{STATUS_CFG[s].label}</span>
+                    <span className="dashboard-status-count tabular-nums">{count}<span>{Math.round(pct)}%</span></span>
                   </div>
-                  <div className="h-1.5 bg-slate-50 rounded-full overflow-hidden border border-slate-200">
-                    <div className={`h-full rounded-full transition-all duration-500 ${bar}`} style={{ width: `${pct}%` }} />
+                  <div className="dashboard-status-track" role="progressbar" aria-label={STATUS_CFG[s].label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)} aria-valuetext={`${count} of ${appointments.length} appointments`}>
+                    <div className="dashboard-status-fill" style={{ width: `${pct}%` }} />
                   </div>
                 </div>
               );
@@ -1698,7 +1707,7 @@ export default function App() {
       <div className="app-frame relative z-10 flex flex-col min-h-screen">
         <FloatingHeader title={VIEW_TITLES[view]} currentUser={currentUser} onNewAppointment={() => { setBookingKey(k => k + 1); setEditAptId(null); setAptPreFill(undefined); setView("new-appointment"); }} canCreate={!!canCreate} onOpenAppointment={handleViewDetail} onSearch={query => {setGlobalSearch(query);setView("appointments");}} />
         <main id="main-content" className="app-main flex-1 pb-6" tabIndex={-1}>
-          {view === "dashboard" && <DashboardView appointments={appointments} activityLog={activityLog} onViewDetail={handleViewDetail} onNewAppointment={() => { setBookingKey(k => k + 1); setEditAptId(null); setAptPreFill(undefined); setView("new-appointment"); }} onNav={setView} currentUser={currentUser} />}
+          {view === "dashboard" && <DashboardView appointments={appointments} activityLog={activityLog} onViewDetail={handleViewDetail} onNav={setView} currentUser={currentUser} />}
           {view === "appointments" && <AppointmentsView appointments={appointments} onViewDetail={handleViewDetail} onEdit={handleEdit} onNewAppointment={() => { setBookingKey(k => k + 1); setEditAptId(null); setAptPreFill(undefined); setView("new-appointment"); }} onCancel={setCancelId} onComplete={setCompleteId} onReschedule={setRescheduleId} currentUser={currentUser} initialSearch={globalSearch} />}
           {view === "new-appointment" && (
             <NewAppointmentView key={bookingKey} appointments={appointments} onSave={handleSave}
