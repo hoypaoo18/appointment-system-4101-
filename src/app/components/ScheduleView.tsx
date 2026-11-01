@@ -1,12 +1,15 @@
 import { useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { businessDate, minute, slotAvailability, type SchedulingAppointment } from '../../../shared/appointment-rules.mjs';
+import { minute, slotAvailability, type SchedulingAppointment } from '../../../shared/appointment-rules.mjs';
 import { useExecutiveSchedules } from '../hooks/useExecutiveSchedules';
+import { useBusinessDate } from '../hooks/useBusinessDate';
 import { useCurrentTime } from '../hooks/useCurrentTime';
 
 interface Executive { id: string; name: string; initials: string; }
 interface CalendarAppointment extends SchedulingAppointment { id: string; status: string; clientName: string; purpose: string; }
 interface Props {
+  title?: string;
+  busySlots?: SchedulingAppointment[];
   appointments: CalendarAppointment[];
   executives: Executive[];
   onViewDetail: (id: string) => void;
@@ -26,9 +29,9 @@ const statusClasses: Record<string, string> = {
 };
 const restrictionLabels: Record<string, string> = { break: 'Break', buffer: 'Buffer', 'working-hours': 'Outside hours', 'office-hours': 'Outside hours', 'unavailable-date': 'Unavailable', 'non-working-day': 'Closed', past: 'Past', loading: 'Loading', unknown: 'Unavailable' };
 
-export function ScheduleView({ appointments, executives, onViewDetail, onNewAptFromSlot, defaultView, defaultDuration, canCreate }: Props) {
+export function ScheduleView({ title = 'Schedule', appointments, busySlots, executives, onViewDetail, onNewAptFromSlot, defaultView, defaultDuration, canCreate }: Props) {
   const now = useCurrentTime();
-  const today = businessDate(now);
+  const today = useBusinessDate();
   const [calView, setCalView] = useState(defaultView);
   const [currentDate, setCurrentDate] = useState(() => new Date(today + 'T00:00:00'));
   const [executiveFilter, setExecutiveFilter] = useState('all');
@@ -36,14 +39,14 @@ export function ScheduleView({ appointments, executives, onViewDetail, onNewAptF
   const { schedules, loading, error, retry } = useExecutiveSchedules();
   const policies = useMemo(() => new Map(schedules.map(schedule => [schedule.id, schedule.policy])), [schedules]);
   const appointmentsByLane = useMemo(() => {
-    const grouped = new Map<string, CalendarAppointment[]>();
-    for (const appointment of appointments) {
+    const grouped = new Map<string, SchedulingAppointment[]>();
+    for (const appointment of [...appointments, ...(busySlots || []).map((slot,index) => ({...slot,id:'unavailable-'+index}))]) {
       const key = `${appointment.executiveId}|${appointment.date}`;
       const lane = grouped.get(key) || [];
       lane.push(appointment); grouped.set(key, lane);
     }
     return grouped;
-  }, [appointments]);
+  }, [appointments,busySlots]);
   const visibleExecutives = executives.filter(executive => executiveFilter === 'all' || executive.id === executiveFilter);
   const laneCount = Math.max(1, visibleExecutives.length);
   const weekStart = useMemo(() => { const start = new Date(currentDate); start.setDate(start.getDate() - (start.getDay() === 0 ? 6 : start.getDay() - 1)); return start; }, [currentDate]);
@@ -55,7 +58,7 @@ export function ScheduleView({ appointments, executives, onViewDetail, onNewAptF
   const columns = `60px repeat(${days.length}, minmax(0, 1fr))`;
   return <div className="p-4 md:p-6 flex flex-col gap-4">
     <div className="flex items-center justify-between flex-wrap gap-3">
-      <div><h1 className="text-xl font-semibold text-slate-900 tracking-tight">Schedule</h1><p className="text-sm text-slate-500 mt-0.5">{range}</p></div>
+      <div><h1 className="text-xl font-semibold text-slate-900 tracking-tight">{title}</h1><p className="text-sm text-slate-500 mt-0.5">{range}</p></div>
       <div className="flex flex-wrap items-center gap-2">
         <button onClick={() => setCurrentDate(new Date(today + 'T00:00:00'))} className="ui-button-secondary px-3 py-2 text-sm rounded-lg">Today</button>
         <button aria-label="Previous schedule period" onClick={() => move(-1)} className="ui-icon-button rounded-lg text-slate-500 hover:bg-white"><ChevronLeft className="w-4 h-4" /></button>

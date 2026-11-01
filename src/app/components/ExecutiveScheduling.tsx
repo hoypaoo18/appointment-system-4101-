@@ -28,7 +28,7 @@ export function ExecutiveScheduling({user}:{user:{role:string;executiveId?:strin
     <label>End time<input className={field} type="time" value={policy.endTime} onChange={e=>setPolicy({...policy,endTime:e.target.value})}/></label>
     <label>Buffer (minutes)<input className={field} type="number" min={0} max={120} value={policy.bufferMinutes} onChange={e=>setPolicy({...policy,bufferMinutes:Number(e.target.value)})}/></label>
    </div>
-   <label className="approval-option"><input type="checkbox" checked={policy.requireApproval} onChange={e=>setPolicy({...policy,requireApproval:e.target.checked})}/><span><strong>Require executive approval</strong><span>New and rescheduled appointments remain pending until approved.</span></span></label>
+   <label className="approval-option"><input type="checkbox" checked={policy.requireApproval} onChange={e=>setPolicy({...policy,requireApproval:e.target.checked})}/><span><strong>Require approval for staff bookings</strong><span>Client bookings always require approval. Enable this to also require approval for new and rescheduled staff bookings.</span></span></label>
    <div className="availability-exceptions">
     <section className="availability-exception">
      <div className="exception-heading"><h3>Daily breaks</h3><span>{policy.breaks.length}</span></div>

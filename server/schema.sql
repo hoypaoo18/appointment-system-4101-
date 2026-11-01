@@ -41,7 +41,7 @@ INSERT IGNORE INTO write_lock VALUES (1);
 CREATE TABLE IF NOT EXISTS users (
   id VARCHAR(64) PRIMARY KEY, name VARCHAR(255) NOT NULL,
   email VARCHAR(255) NOT NULL UNIQUE, password_hash VARCHAR(255) NOT NULL,
-  role ENUM('assistant','executive','admin') NOT NULL,
+  role ENUM('assistant','executive','admin','client') NOT NULL,
   title VARCHAR(255) NOT NULL, initials VARCHAR(16) NOT NULL,
   active BOOLEAN NOT NULL DEFAULT TRUE, is_demo BOOLEAN NOT NULL DEFAULT FALSE,
   executive_id VARCHAR(64) NULL,
@@ -53,6 +53,23 @@ CREATE TABLE IF NOT EXISTS sessions (
   expires_at BIGINT NOT NULL,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   INDEX session_expiry (expires_at)
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS client_profiles (
+  user_id VARCHAR(64) PRIMARY KEY,
+  organization VARCHAR(255) NOT NULL, phone VARCHAR(64) NOT NULL,
+  verified_at VARCHAR(24) NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS account_verifications (
+  token_hash CHAR(64) PRIMARY KEY, user_id VARCHAR(64) NOT NULL UNIQUE,
+  expires_at BIGINT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS client_appointments (
+  appointment_id VARCHAR(64) PRIMARY KEY, user_id VARCHAR(64) NOT NULL,
+  FOREIGN KEY (appointment_id) REFERENCES appointments(id),
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  INDEX client_appointment_user (user_id)
 ) ENGINE=InnoDB;
 CREATE TABLE IF NOT EXISTS user_preferences (
   user_id VARCHAR(64) PRIMARY KEY,
@@ -77,8 +94,8 @@ CREATE TABLE IF NOT EXISTS notifications (
 ) ENGINE=InnoDB;
 CREATE TABLE IF NOT EXISTS notification_outbox (
   id VARCHAR(64) PRIMARY KEY, recipient VARCHAR(255) NOT NULL,
-  status ENUM('pending','sending','sent','failed','skipped') NOT NULL DEFAULT 'pending',
-  attempts INT NOT NULL DEFAULT 0, next_attempt BIGINT NOT NULL DEFAULT 0,
+  status ENUM('pending','sending','sent','failed','skipped','uncertain') NOT NULL DEFAULT 'pending',
+  attempts INT NOT NULL DEFAULT 0, retry_count INT UNSIGNED NOT NULL DEFAULT 0, next_attempt BIGINT NOT NULL DEFAULT 0,
   lease_until BIGINT NOT NULL DEFAULT 0, last_error VARCHAR(100) NULL,
   sent_at VARCHAR(24) NULL,
   FOREIGN KEY (id) REFERENCES notifications(id) ON DELETE CASCADE,

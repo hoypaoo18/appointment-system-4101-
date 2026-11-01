@@ -12,7 +12,7 @@ test('The actual completion action rejects early completion and retains approval
   let record = { ...original }, database;
   const execute = async (sql, params = []) => {
     let result = { affectedRows: 1 };
-    if (sql.startsWith('SELECT version FROM migrations')) result = [1, 2, 3, 4, 5, 6].map(version => ({ version }));
+    if (sql.startsWith('SELECT version FROM migrations')) result = [1, 2, 3, 4, 5, 6, 7, 8].map(version => ({ version }));
     else if (sql.startsWith('SELECT data FROM executive_schedules')) result = [{ data: JSON.stringify(policy) }];
     else if (sql.startsWith('SELECT data FROM appointments WHERE id')) result = [{ data: JSON.stringify(record) }];
     else if (sql.startsWith('UPDATE appointments SET')) record = JSON.parse(params[5]);
@@ -42,6 +42,9 @@ test('The actual completion action rejects early completion and retains approval
     await assert.rejects(complete, /already closed/);
     record = { ...original, status: 'pending' }; policy.requireApproval = true;
     await assert.rejects(complete, /Approve the appointment/);
+    record = { ...original, status: 'pending', clientUserId: 'client-1' }; policy.requireApproval = false;
+    await assert.rejects(complete, /Approve the appointment/);
+    assert.equal(record.status, 'pending'); assert.equal(commits, 1);
   } finally {
     if (database) await database.close();
     mysql.createConnection = originals.createConnection; mysql.createPool = originals.createPool; Date.now = originals.now;

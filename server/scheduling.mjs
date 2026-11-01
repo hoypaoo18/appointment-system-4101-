@@ -14,7 +14,7 @@ export function validateSchedule(input){
 export function schedulingStore(query,transaction,audit){
  const get=async id=>{const rows=await query('SELECT data FROM executive_schedules WHERE executive_id=?',[id]);return rows.length?{...scheduleDefaults,...parseDatabaseJson(rows[0].data)}:structuredClone(scheduleDefaults);};
  return {get,
-  async list(){const execs=await query('SELECT id,name FROM executives ORDER BY id');return Promise.all(execs.map(async e=>({...e,policy:await get(e.id)})));},
+  async list(user){const execs=user?.role==='executive'?await query('SELECT id,name FROM executives WHERE id=?',[user.executiveId||null]):await query('SELECT id,name FROM executives ORDER BY id');return Promise.all(execs.map(async e=>({...e,policy:await get(e.id)})));},
   async save(id,input,user,meta){return transaction(async()=>{
    if(user.role!=='admin'&&(user.role!=='executive'||user.executiveId!==id))fail('You cannot change this executive schedule',403);
    if(!(await query('SELECT id FROM executives WHERE id=?',[id])).length)fail('Executive not found',404);

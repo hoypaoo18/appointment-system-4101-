@@ -14,7 +14,11 @@
     "user:create": "node --env-file-if-exists=.env.production server/provision-user.mjs",
     "test:deploy": "node --test tests/deployment-smoke.test.mjs",
     "test": "node --test tests/*.test.mjs",
-    "test:priority": "node --env-file-if-exists=.env.local qa/high-priority.mjs"
+    "test:priority": "node --env-file-if-exists=.env.local qa/high-priority.mjs",
+    "test:clients": "node --env-file-if-exists=.env.local qa/client-booking.mjs",
+    "test:navigation": "node --env-file-if-exists=.env.local qa/role-navigation.mjs",
+    "test:executives": "node --env-file-if-exists=.env.local qa/executive-routing.mjs",
+    "test:reliability": "node --env-file-if-exists=.env.local qa/reliability.mjs"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",

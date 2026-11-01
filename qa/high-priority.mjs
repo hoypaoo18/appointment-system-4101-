@@ -23,7 +23,9 @@ const morning = Date.parse(date + 'T09:00:00+08:00');
 let clock = morning;
 Date.now = () => clock;
 const future = new Date(Date.parse(date + 'T00:00:00Z') + 14 * 86400000).toISOString().slice(0, 10);
-const closedDate = new Date(Date.parse(future + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10);
+// Keep the closed-date fixture in the same Monday–Sunday calendar week, including Sunday runs.
+const closedOffset = new Date(future + 'T00:00:00Z').getUTCDay() === 0 ? -1 : 1;
+const closedDate = new Date(Date.parse(future + 'T00:00:00Z') + closedOffset * 86400000).toISOString().slice(0, 10);
 const output = new URL('./evidence-high-priority/', import.meta.url);
 const checks = [];
 let admin, database, server, browser, staffApi, adminApi, qaCreated = false;
@@ -109,6 +111,9 @@ try {
   page.setDefaultTimeout(10000);
   await page.clock.install({ time: new Date(morning) });
   await page.goto(baseURL);
+  // The backend's mocked Date.now also affects Playwright's clock replay log.
+  // Synchronize the loaded page explicitly before asserting time boundaries.
+  await page.clock.setSystemTime(new Date(morning));
   await page.getByLabel('Email', { exact: true }).fill('sarah.mitchell@meridian.com');
   await page.getByLabel('Password', { exact: true }).fill('MeridianDemo123!');
   await page.getByRole('button', { name: 'Sign In', exact: true }).click();
