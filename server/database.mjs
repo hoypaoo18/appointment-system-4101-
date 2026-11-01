@@ -8,9 +8,9 @@ import { parseDatabaseJson } from './db-json.mjs';
 import { isProduction, validateProductionConfig } from './config.mjs';
 import { notificationStore } from './notifications.mjs';
 import { schedulingStore } from './scheduling.mjs';
-import { canCompleteAppointment, slotAvailability } from '../shared/appointment-rules.mjs';
+import { businessDate, canCompleteAppointment, requiresAppointmentApproval, slotAvailability } from '../shared/appointment-rules.mjs';
 
-export const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+export const today = () => businessDate();
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
 const minutes = t => Number(t.slice(0, 2)) * 60 + Number(t.slice(3));
 
@@ -70,7 +70,7 @@ export async function openDatabase(options = {}) {
     });
     const audit = auditStore(query);
     const accounts = accountStore(query, transaction, audit);
-    const notifications = notificationStore(query, transaction);
+    const notifications = notificationStore(query, transaction, audit);
     const scheduling = schedulingStore(query, transaction, audit);
     if (initialize) await accounts.seed(isProduction() ? [] : JSON.parse(readFileSync(new URL('./seed.json', import.meta.url), 'utf8')).INITIAL_USERS);
     if (initialize) await transaction(async () => {
@@ -86,7 +86,18 @@ export async function openDatabase(options = {}) {
     if (initialize) await query('INSERT IGNORE INTO migrations VALUES (4)');
     if (initialize) await query('INSERT IGNORE INTO migrations VALUES (5)');
     if (initialize) await query('INSERT IGNORE INTO migrations VALUES (6)');
-    if (!initialize && (await query('SELECT version FROM migrations WHERE version IN (1,2,3,4,5,6)')).length !== 6) throw new Error('Run db:deploy before starting production');
+    if (initialize && !(await query('SELECT version FROM migrations WHERE version=7')).length) {
+      const role = await query("SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME='users' AND COLUMN_NAME='role'", [name]);
+      if (!role[0]?.COLUMN_TYPE.includes("'client'")) await query("ALTER TABLE users MODIFY COLUMN role ENUM('assistant','executive','admin','client') NOT NULL");
+      await query('INSERT IGNORE INTO migrations VALUES (7)');
+    }
+    if (initialize && !(await query('SELECT version FROM migrations WHERE version=8')).length) {
+      const columns=await query("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME='notification_outbox' AND COLUMN_NAME='retry_count'",[name]);
+      if(!columns.length)await query('ALTER TABLE notification_outbox ADD COLUMN retry_count INT UNSIGNED NOT NULL DEFAULT 0');
+      await query("ALTER TABLE notification_outbox MODIFY COLUMN status ENUM('pending','sending','sent','failed','skipped','uncertain') NOT NULL DEFAULT 'pending'");
+      await query('INSERT IGNORE INTO migrations VALUES (8)');
+    }
+    if (!initialize && (await query('SELECT version FROM migrations WHERE version IN (1,2,3,4,5,6,7,8)')).length !== 8) throw new Error('Run db:deploy before starting production');
     const notificationTimer=setInterval(()=>void notifications.tick().catch(()=>console.error('Notification worker failed; will retry')),Math.max(1000,Number(process.env.NOTIFICATION_INTERVAL_MS)||10000));
     notificationTimer.unref();
     const get = async id => {
@@ -94,12 +105,38 @@ export async function openDatabase(options = {}) {
       if (!row) fail('Appointment not found', 404);
       return parseDatabaseJson(row.data);
     };
-    const state = async () => ({
+    const getForUser = async (id, user) => {
+      if (user?.role === 'client' && !(await query('SELECT user_id FROM client_appointments WHERE appointment_id=? AND user_id=?', [id,user.id])).length) fail('Appointment not found',404);
+      const appointment = await get(id);
+      if (user?.role === 'executive' && (!user.executiveId || appointment.executiveId !== user.executiveId)) fail('Appointment not found',404);
+      return appointment;
+    };
+    const state = async user => {
+      if (user?.role === 'executive') {
+        const executiveId = user.executiveId || null;
+        return {
+          executives: await query('SELECT id,name,title,initials FROM executives WHERE id=?', [executiveId]),
+          appointments: (await query('SELECT data FROM appointments WHERE executive_id=? ORDER BY date,start_min,id', [executiveId])).map(row => parseDatabaseJson(row.data)),
+          activityLog: (await query('SELECT h.data FROM activity h JOIN appointments a ON a.id=h.appointment_id WHERE a.executive_id=? ORDER BY h.sequence', [executiveId])).map(row => parseDatabaseJson(row.data)),
+        };
+      }
+      if (user?.role === 'client') {
+        const owned = await query('SELECT a.data FROM appointments a JOIN client_appointments c ON c.appointment_id=a.id WHERE c.user_id=? ORDER BY a.date,a.start_min,a.id', [user.id]);
+        const activity = await query('SELECT a.data FROM activity a JOIN client_appointments c ON c.appointment_id=a.appointment_id WHERE c.user_id=? ORDER BY a.sequence', [user.id]);
+        const busy = await query("SELECT a.executive_id,a.date,a.start_min,a.duration FROM appointments a LEFT JOIN client_appointments c ON c.appointment_id=a.id WHERE (c.user_id IS NULL OR c.user_id<>?) AND a.date>=? AND a.status NOT IN ('cancelled','completed') ORDER BY a.date,a.start_min", [user.id,today()]);
+        return {
+          executives: await query('SELECT id,name,title,initials FROM executives ORDER BY id'),
+          appointments: owned.map(row => parseDatabaseJson(row.data)), activityLog: activity.map(row => parseDatabaseJson(row.data)),
+          busySlots: busy.map(row => ({ executiveId:row.executive_id,date:row.date,startTime:`${Math.floor(row.start_min/60)}`.padStart(2,'0')+':'+`${row.start_min%60}`.padStart(2,'0'),duration:row.duration,status:'confirmed' })),
+        };
+      }
+      return {
       executives: await query('SELECT id,name,title,initials FROM executives ORDER BY id'),
       appointments: (await db.prepare('SELECT data FROM appointments ORDER BY date, start_min, id').all()).map(r => parseDatabaseJson(r.data)),
       activityLog: (await db.prepare('SELECT data FROM activity ORDER BY sequence').all()).map(r => parseDatabaseJson(r.data)),
-    });
-    const validate = async (a, old = null) => {
+      };
+    };
+    const validate = async (a, old = null, user = null) => {
       for (const field of ['clientName','clientOrg','clientEmail','clientPhone','purpose','executiveId','date','startTime']) {
         if (typeof a[field] !== 'string' || !a[field].trim() || a[field].length > 500) fail(`Invalid ${field}`);
         a[field] = a[field].trim();
@@ -117,34 +154,49 @@ export async function openDatabase(options = {}) {
       const availability = slotAvailability(a, policy, existing.map(row => parseDatabaseJson(row.data)), {
         allowPast: !!old && old.date === a.date && old.startTime === a.startTime,
       });
-      if (!availability.available) fail(availability.reason, availability.status);
+      if (!availability.available) fail(user?.role === 'client' && availability.conflictId ? 'This time is unavailable. Choose another time.' : availability.reason, availability.status);
+    };
+    const requireFutureClientAction = (appointment, user) => {
+      if (user?.role === 'client' && Date.parse(`${appointment.date}T${appointment.startTime}:00+08:00`) <= Date.now()) fail('Contact the office to change an appointment that has already started.',409);
     };
     const write = async a => await db.prepare('UPDATE appointments SET executive_id=?, date=?, start_min=?, duration=?, status=?, data=? WHERE id=?').run(a.executiveId,a.date,minutes(a.startTime),a.duration,a.status,JSON.stringify(a),a.id);
     return {
       state, get, accounts, audit, notifications, scheduling, close: () => {clearInterval(notificationTimer);return db.close();},
-      async availability(input) { const old=input.id?await get(input.id):null;await validate({...input,id:input.id||'new-appointment',notes:input.notes||''},old);return {available:true,requireApproval:(await scheduling.get(input.executiveId)).requireApproval}; },
+      async availability(input,user) {
+        const old=input.id?await getForUser(input.id,user):null;
+        if(user?.role==='executive' && (!user.executiveId || input.executiveId!==user.executiveId)) fail('You can only check your own executive schedule',403);
+        await validate({...input,id:input.id||'new-appointment',notes:input.notes||''},old,user);
+        return {available:true,requireApproval:requiresAppointmentApproval(old || {clientUserId:user?.role==='client'?user.id:undefined},await scheduling.get(input.executiveId))};
+      },
       async save(input, id, actor = 'Sarah Mitchell', meta = {}) {
         return transaction(async () => {
-          const old = id ? await get(id) : null;
+          const old = id ? await getForUser(id,meta.user) : null;
+          if (old) requireFutureClientAction(old,meta.user);
           if (old && ['cancelled','completed'].includes(old.status)) fail('Closed appointments cannot be edited', 409);
           if (old && input.updatedAt !== old.updatedAt) fail('This appointment changed. Refresh and try again.', 409);
           const now = new Date(Math.max(Date.now(), old ? Date.parse(old.updatedAt) + 1 : 0)).toISOString();
           const a = { ...old, ...Object.fromEntries(['clientName','clientOrg','clientEmail','clientPhone','purpose','notes','executiveId','date','startTime','duration'].map(k => [k,input[k]])),
             id: id || `APT-${randomUUID()}`, status: old?.status || 'confirmed', createdAt: old?.createdAt || now, createdBy: old?.createdBy || actor, updatedAt: now, updatedBy: actor };
-          await validate(a,old);
+          if (meta.user?.role === 'client') {
+            a.clientUserId = meta.user.id; a.clientName = meta.user.name; a.clientEmail = meta.user.email;
+          }
+          await validate(a,old,meta.user);
           const policy=await scheduling.get(a.executiveId);
-          if(!old||old.executiveId!==a.executiveId||old.date!==a.date||old.startTime!==a.startTime||old.duration!==a.duration){if(policy.requireApproval)a.status='pending';}
+          if(!old||old.executiveId!==a.executiveId||old.date!==a.date||old.startTime!==a.startTime||old.duration!==a.duration){if(requiresAppointmentApproval(a,policy))a.status='pending';}
           if (old) await write(a); else await insert(a);
+          if (!old && meta.user?.role === 'client') await query('INSERT INTO client_appointments (appointment_id,user_id) VALUES (?,?)', [a.id,meta.user.id]);
           await log(a, old ? 'updated' : 'created', actor);
           if (!old && a.status==='confirmed') await log(a, 'confirmed', actor);
           await notifications.event(a,a.status==='pending'?'pending':old?'updated':'confirmed');
           await audit.record({ ...meta, actorName: actor, action: old ? 'appointment.updated' : 'appointment.created', entityType: 'appointment', entityId: a.id, details: { before: old ? { date: old.date, startTime: old.startTime, duration: old.duration, executiveId: old.executiveId, status: old.status } : null, after: { date: a.date, startTime: a.startTime, duration: a.duration, executiveId: a.executiveId, status: a.status } } });
-          return { appointment: a, ...await state() };
+          return { appointment: a, ...await state(meta.user) };
         });
       },
       async action(id, action, input, actor = 'Sarah Mitchell', meta = {}) {
         return transaction(async () => {
-          const old = await get(id);
+          const old = await getForUser(id,meta.user);
+          if (meta.user?.role === 'client' && !['cancel','reschedule'].includes(action)) fail('You cannot perform this appointment action',403);
+          requireFutureClientAction(old,meta.user);
           if (['completed','cancelled'].includes(old.status)) fail('Appointment is already closed', 409);
           if (input.updatedAt !== old.updatedAt) fail('This appointment changed. Refresh and try again.', 409);
           const a = { ...old, updatedAt: new Date(Math.max(Date.now(), Date.parse(old.updatedAt) + 1)).toISOString(), updatedBy: actor };
@@ -159,19 +211,19 @@ export async function openDatabase(options = {}) {
               a.status='cancelled';a.cancellationReason='Declined: '+input.reason.trim();
             }else{await validate(a,old);a.status='confirmed';}
           } else if (action === 'complete') {
-            if(a.status==='pending'&&(await scheduling.get(a.executiveId)).requireApproval)fail('Approve the appointment before completing it',409);
+            if(a.status==='pending'&&requiresAppointmentApproval(a,await scheduling.get(a.executiveId)))fail('Approve the appointment before completing it',409);
             if (!canCompleteAppointment(a)) fail('Appointments can only be completed after their scheduled end time', 409);
             a.status = 'completed';
           } else if (action === 'reschedule') {
             a.previousDate = old.date; a.previousStartTime = old.startTime;
             a.date = input.date; a.startTime = input.startTime; a.duration = input.duration; a.status = 'rescheduled';
-            await validate(a);
-            if((await scheduling.get(a.executiveId)).requireApproval)a.status='pending';
+            await validate(a,null,meta.user);
+            if(requiresAppointmentApproval(a,await scheduling.get(a.executiveId)))a.status='pending';
           } else fail('Unknown action', 404);
           await write(a); await log(a, a.status, actor, a.cancellationReason || (action === 'reschedule' ? `Moved from ${old.date} ${old.startTime} to ${a.date} ${a.startTime}` : undefined));
           await notifications.event(a,a.status);
           await audit.record({ ...meta, actorName: actor, action: 'appointment.' + a.status, entityType: 'appointment', entityId: a.id, details: { before: { date: old.date, startTime: old.startTime, duration: old.duration, status: old.status }, after: { date: a.date, startTime: a.startTime, duration: a.duration, status: a.status } } });
-          return { appointment: a, ...await state() };
+          return { appointment: a, ...await state(meta.user) };
         });
       },
     };

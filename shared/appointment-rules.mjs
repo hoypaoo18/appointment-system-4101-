@@ -9,6 +9,8 @@ const validDate = date => typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test
   && Number.isFinite(Date.parse(date)) && new Date(date).toISOString().slice(0, 10) === date;
 const blocked = (code, reason, status = 409) => ({ available: false, code, reason, status });
 export const businessDate = (now = Date.now()) => new Date(now + 8 * 3600000).toISOString().slice(0, 10);
+// Client-owned bookings always require approval, even when staff bookings do not.
+export const requiresAppointmentApproval = (appointment, policy) => Boolean(appointment.clientUserId || policy?.requireApproval);
 
 export function appointmentEndTime(appointment) {
   if (!validDate(appointment.date) || !validTime(appointment.startTime)
@@ -18,6 +20,7 @@ export function appointmentEndTime(appointment) {
 
 export function canCompleteAppointment(appointment, now = Date.now()) {
   return ['confirmed', 'rescheduled', 'pending'].includes(appointment.status)
+    && !(appointment.status === 'pending' && appointment.clientUserId)
     && Number.isFinite(appointmentEndTime(appointment)) && appointmentEndTime(appointment) <= now;
 }
 
@@ -52,7 +55,8 @@ export function slotAvailability(appointment, policy, appointments, options = {}
     && end + policy.bufferMinutes > minute(existing.startTime));
   if (conflict) {
     const overlaps = start < minute(conflict.startTime) + conflict.duration && end > minute(conflict.startTime);
-    return { ...blocked(overlaps ? 'occupied' : 'buffer', `Schedule conflict with ${conflict.id}. Choose another time.`), conflictId: conflict.id };
+    const reason = conflict.id?.startsWith('unavailable-') ? 'This time is unavailable. Choose another time.' : `Schedule conflict with ${conflict.id}. Choose another time.`;
+    return { ...blocked(overlaps ? 'occupied' : 'buffer', reason), conflictId: conflict.id };
   }
   return { available: true, code: null, reason: null, status: 200 };
 }

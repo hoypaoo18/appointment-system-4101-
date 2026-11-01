@@ -1,4 +1,6 @@
 export const isProduction = () => process.env.NODE_ENV === 'production';
+// Temporarily optional; set this server-side flag to true to require verification again.
+export const clientVerificationRequired = () => process.env.REQUIRE_CLIENT_EMAIL_VERIFICATION === 'true';
 export function validateProductionConfig() {
   if (!isProduction()) return;
   for (const key of ['DB_HOST','DB_USER','DB_PASSWORD','DB_NAME','PUBLIC_ORIGIN']) if (!process.env[key]) throw new Error(`Production requires ${key}`);

@@ -1,12 +1,19 @@
 import { ExecutiveScheduling, ApprovalControls } from './components/ExecutiveScheduling';
 import { ScheduleView } from './components/ScheduleView';
 import { useExecutiveSchedules } from './hooks/useExecutiveSchedules';
+import { useBusinessDate } from './hooks/useBusinessDate';
 import { useCurrentTime } from './hooks/useCurrentTime';
-import { businessDate, canCompleteAppointment, slotAvailability } from '../../shared/appointment-rules.mjs';
+import { businessDate, canCompleteAppointment, requiresAppointmentApproval, slotAvailability } from '../../shared/appointment-rules.mjs';
 import { STATIC_PREVIEW, previewData } from './preview-data';
-import { NotificationBell } from './components/NotificationBell';
+import { NotificationBell, type NotificationData, type NotificationBellProps } from './components/NotificationBell';
 import { AccessibleDialog } from './components/AccessibleDialog';
 import { SystemHistory } from './components/SystemHistory';
+import { AppointmentReference } from './components/AppointmentReference';
+import { EmailDelivery } from './components/EmailDelivery';
+import { ProfileEditor } from './components/ProfileEditor';
+import { ClientAccess } from './components/ClientAccess';
+import { RoleNavigation } from './components/RoleNavigation';
+import { canAccessView, activeNavigationView, pageTitle, type Role, type AppView } from '../../shared/navigation.mjs';
 import { useState, useMemo, useEffect, useRef, useId, cloneElement, isValidElement } from "react";
 import { Toaster, toast } from "sonner";
 import {
@@ -20,10 +27,8 @@ import {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Status = "pending" | "confirmed" | "rescheduled" | "completed" | "cancelled";
-type Role = "assistant" | "executive" | "admin";
-type AppView = "dashboard" | "appointments" | "new-appointment" | "detail" | "schedule" | "history" | "settings" | "system-history";
 type BookStep = "client" | "meeting" | "executive" | "datetime" | "availability" | "review" | "confirmed";
-type ActivityAction = "created" | "confirmed" | "rescheduled" | "cancelled" | "completed" | "updated";
+type ActivityAction = "created" | "pending" | "confirmed" | "rescheduled" | "cancelled" | "completed" | "updated";
 
 interface Executive { id: string; name: string; title: string; initials: string; }
 interface Appointment {
@@ -32,8 +37,10 @@ interface Appointment {
   date: string; startTime: string; duration: number; status: Status;
   createdAt: string; updatedAt: string; createdBy: string; updatedBy: string;
   cancellationReason?: string; previousDate?: string; previousStartTime?: string;
+  clientUserId?: string;
 }
-interface AppUser { id: string; name: string; email: string; role: Role; title: string; active: boolean; initials: string; executiveId?: string | null; }
+export interface AppUser { id: string; name: string; email: string; role: Role; title: string; active: boolean; initials: string; executiveId?: string | null; organization?: string; phone?: string; emailVerified?: boolean; emailVerificationRequired?: boolean; }
+type BusySlot = { executiveId: string; date: string; startTime: string; duration: number; status: string };
 interface ActivityEntry {
   id: string; aptId: string; action: ActivityAction;
   user: string; timestamp: string; clientName: string; note?: string;
@@ -43,7 +50,7 @@ interface ActivityEntry {
 
 let EXECUTIVES: Executive[] = [];
 
-const TODAY = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+
 
 
 
@@ -88,6 +95,7 @@ const STATUS_CFG: Record<Status, { label: string; cls: string; dot: string }> = 
 
 const ACTIVITY_CFG: Record<ActivityAction, { label: string; Icon: React.FC<{ className?: string }>; cls: string }> = {
   created:     { label: "Appointment Created",     Icon: Plus,          cls: "bg-blue-100/80 text-blue-600 border-blue-200/60" },
+  pending:     { label: "Appointment Awaiting Approval", Icon: AlertCircle, cls: "bg-amber-100/80 text-amber-700 border-amber-200/60" },
   confirmed:   { label: "Appointment Confirmed",   Icon: CheckCircle2,  cls: "bg-emerald-100/80 text-emerald-600 border-emerald-200/60" },
   rescheduled: { label: "Appointment Rescheduled", Icon: RefreshCw,     cls: "bg-indigo-100/80 text-indigo-600 border-indigo-200/60" },
   cancelled:   { label: "Appointment Cancelled",   Icon: XCircle,       cls: "bg-red-100/80 text-red-600 border-red-200/60" },
@@ -144,82 +152,7 @@ function Background() {
   return <div className="app-background fixed inset-0 z-0 pointer-events-none" aria-hidden="true" />;
 }
 
-function FloatingNav({ currentView, onNav, currentUser, onLogout }: { currentView: AppView; onNav: (v: AppView) => void; currentUser: AppUser; onLogout: () => void }) {
-  const nav = [
-    { id: "dashboard" as AppView, label: "Dashboard", Icon: LayoutDashboard },
-    { id: "appointments" as AppView, label: "Appointments", Icon: ClipboardList },
-    { id: "schedule" as AppView, label: "Schedule", Icon: CalendarDays },
-    { id: "history" as AppView, label: "History", Icon: HistoryIcon },
-    { id: "settings" as AppView, label: "Settings", Icon: Settings },
-  ];
-  if (currentUser.role === "admin") nav.push({ id: "system-history", label: "System History", Icon: Activity });
-  const isActive = (v: AppView) => ["detail","new-appointment"].includes(currentView) ? v === "appointments" : currentView === v;
-  return (
-    <aside className="app-sidebar fixed left-0 top-0 bottom-0 z-40 w-60 hidden md:flex flex-col">
-      <div className="flex flex-col h-full overflow-hidden">
-        <div className="px-6 py-7 border-b border-slate-100">
-          <div className="flex items-center gap-2.5">
-            <div className="brand-mark w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0">
-              <Calendar className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <div className="text-base font-bold text-slate-900 tracking-tight leading-tight">Meridian<span className="text-blue-600">.</span></div>
-              <div className="text-[11px] text-slate-500 mt-1 leading-tight">Appointment management</div>
-            </div>
-          </div>
-        </div>
-        <nav aria-label="Main navigation" className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto">
-          <p className="nav-section-label px-3 mb-3">Workspace</p>
-          {nav.map(({ id, label, Icon }) => (
-            <button key={id} aria-current={isActive(id) ? "page" : undefined} onClick={() => onNav(id)} className={`sidebar-link w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors ${isActive(id) ? "is-active" : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"}`}>
-              <Icon className="w-[18px] h-[18px] flex-shrink-0" />
-              {label}
-              {isActive(id) && <span className="ml-auto w-1.5 h-1.5 bg-blue-600 rounded-full" />}
-            </button>
-          ))}
-        </nav>
-        <div className="px-4 py-5 border-t border-slate-100 space-y-3">
-          <div className="flex items-center gap-3 px-2 py-2">
-            <Av initials={currentUser.initials} />
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-slate-800 truncate">{currentUser.name}</div>
-              <div className="text-xs text-slate-500 capitalize mt-0.5">{currentUser.role}</div>
-            </div>
-          </div>
-          <button onClick={onLogout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-colors">
-            <LogOut className="w-4 h-4" /> Sign Out
-          </button>
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-function MobileBottomNav({ currentView, onNav, isAdmin }: { currentView: AppView; onNav: (v: AppView) => void; isAdmin: boolean }) {
-  const nav = [
-    { id: "dashboard" as AppView, label: "Home", Icon: LayoutDashboard },
-    { id: "appointments" as AppView, label: "Appts", Icon: ClipboardList },
-    { id: "schedule" as AppView, label: "Schedule", Icon: CalendarDays },
-    { id: "history" as AppView, label: "History", Icon: HistoryIcon },
-    { id: "settings" as AppView, label: "Settings", Icon: Settings },
-  ];
-  if (isAdmin) nav.push({ id: "system-history", label: "Audit", Icon: Activity });
-  const isActive = (v: AppView) => ["detail","new-appointment"].includes(currentView) ? v === "appointments" : currentView === v;
-  return (
-    <nav aria-label="Mobile navigation" className="mobile-navigation fixed bottom-0 left-0 right-0 z-40 md:hidden">
-      <div className="px-2 py-2 flex items-center justify-around gap-1">
-        {nav.map(({ id, label, Icon }) => (
-          <button key={id} aria-current={isActive(id) ? "page" : undefined} onClick={() => onNav(id)} className={`flex flex-col items-center gap-1 px-1 py-2 min-w-0 rounded-lg transition-colors flex-1 ${isActive(id) ? "bg-blue-50 text-blue-700" : "text-slate-500 hover:text-slate-900"}`}>
-            <Icon className="w-4 h-4" />
-            <span className="text-[10px] font-medium">{label}</span>
-          </button>
-        ))}
-      </div>
-    </nav>
-  );
-}
-
-function FloatingHeader({ title, currentUser, onNewAppointment, canCreate, onOpenAppointment, onSearch }: { title: string; currentUser: AppUser; onNewAppointment: () => void; canCreate: boolean; onOpenAppointment: (id: string) => void; onSearch: (query: string) => void }) {
+function FloatingHeader({ title, currentUser, onNewAppointment, canCreate, onOpenAppointment, onSearch, notificationProps }: { notificationProps: Omit<NotificationBellProps, "onOpenAppointment">; title: string; currentUser: AppUser; onNewAppointment: () => void; canCreate: boolean; onOpenAppointment: (id: string) => void; onSearch: (query: string) => void }) {
   return (
     <header className="app-header sticky top-0 z-30">
       <div className="header-inner flex items-center gap-3">
@@ -233,7 +166,7 @@ function FloatingHeader({ title, currentUser, onNewAppointment, canCreate, onOpe
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
             <input aria-label="Search all appointments" type="search" placeholder="Search appointments…" onKeyDown={e => {if(e.key === "Enter") onSearch(e.currentTarget.value);}} className="ui-input pl-9 pr-4 py-2 text-sm rounded-lg border border-slate-200 w-56 placeholder:text-slate-400" />
           </div>
-          {!STATIC_PREVIEW && <NotificationBell userId={currentUser.id} onOpenAppointment={onOpenAppointment} />}
+          {!STATIC_PREVIEW && <NotificationBell {...notificationProps} onOpenAppointment={onOpenAppointment} />}
           {canCreate && (
             <button onClick={onNewAppointment} className="appointment-cta ui-button-primary flex items-center gap-2 px-3 sm:px-4 py-2.5 rounded-lg text-sm font-semibold">
               <Plus className="w-4 h-4" /><span className="sm:hidden">New</span><span className="hidden sm:inline">New Appointment</span>
@@ -295,10 +228,10 @@ function CompleteModal({ apt, onConfirm, onClose }: { apt: Appointment; onConfir
   const { schedules, loading, error, retry } = useExecutiveSchedules(apt.status === 'pending');
   const policy = schedules.find(schedule => schedule.id === apt.executiveId)?.policy;
   const endTime = addMin(apt.startTime, apt.duration);
-  const approvalBlocked = apt.status === 'pending' && (loading || !!error || !policy || policy.requireApproval);
+  const approvalBlocked = apt.status === 'pending' && (requiresAppointmentApproval(apt, policy) || loading || !!error || !policy);
   const canComplete = canCompleteAppointment(apt, now) && !approvalBlocked;
   const completionMessage = approvalBlocked
-    ? error || (loading ? 'Checking approval requirements…' : policy?.requireApproval ? 'Approve this appointment before completing it.' : 'Executive availability could not be verified.')
+    ? requiresAppointmentApproval(apt, policy) ? 'Approve this appointment before completing it.' : error || (loading ? 'Checking approval requirements…' : 'Executive availability could not be verified.')
     : 'Appointments can only be completed after their scheduled end time.';
   return (
     <AccessibleDialog title="Complete Appointment" onClose={onClose}>
@@ -338,6 +271,7 @@ function CompleteModal({ apt, onConfirm, onClose }: { apt: Appointment; onConfir
 }
 
 function RescheduleModal({ apt, appointments, onConfirm, onClose }: { apt: Appointment; appointments: Appointment[]; onConfirm: (id: string, date: string, time: string, duration: number) => void; onClose: () => void }) {
+  const today = useBusinessDate();
   const [newDate, setNewDate] = useState(apt.date);
   const [newTime, setNewTime] = useState(apt.startTime);
   const [duration, setDuration] = useState(apt.duration);
@@ -350,7 +284,7 @@ function RescheduleModal({ apt, appointments, onConfirm, onClose }: { apt: Appoi
   const signatureRef = useRef(scheduleSignature); signatureRef.current = scheduleSignature;
   const handleCheck = async () => {
     setChecked(false);
-    if (!newDate || !/^\d{4}-\d{2}-\d{2}$/.test(newDate) || !Number.isFinite(Date.parse(newDate)) || newDate < TODAY) { setValidationError("Choose a valid date today or later"); return; }
+    if (!newDate || !/^\d{4}-\d{2}-\d{2}$/.test(newDate) || !Number.isFinite(Date.parse(newDate)) || newDate < today) { setValidationError("Choose a valid date today or later"); return; }
     if (!newTime || toMin(newTime) < 480 || toMin(newTime) + duration > 1080) { setValidationError("Appointments must fit within 8:00 AM–6:00 PM (Asia/Manila)"); return; }
     if (Date.parse(`${newDate}T${newTime}:00+08:00`) <= Date.now()) {setValidationError("Choose a start time in the future (Asia/Manila)");return;}
     try {
@@ -382,7 +316,7 @@ function RescheduleModal({ apt, appointments, onConfirm, onClose }: { apt: Appoi
           <div className="space-y-4 mb-5">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1.5">New Date <span className="text-red-500">*</span></label>
-              <input type="date" min={TODAY} value={newDate} onChange={e => { setNewDate(e.target.value); setChecked(false); }} className={inpOk} />
+              <input type="date" min={today} value={newDate} onChange={e => { setNewDate(e.target.value); setChecked(false); }} className={inpOk} />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -429,20 +363,23 @@ function RescheduleModal({ apt, appointments, onConfirm, onClose }: { apt: Appoi
 
 // ─── Login ────────────────────────────────────────────────────────────────────
 
-function LoginView({ onLogin }: { onLogin: (user: AppUser) => void }) {
+function LoginView({ onLogin }: { onLogin: (user: AppUser, registered?: boolean) => void }) {
+  const [clientAccess, setClientAccess] = useState<'register' | 'resend' | 'verify' | null>(() => window.location.hash.startsWith('#verify=') ? 'verify' : null);
+  const [verificationRequired, setVerificationRequired] = useState<boolean | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [demoOpen, setDemoOpen] = useState(false);
   const [error, setError] = useState("");
-  const [accounts, setAccounts] = useState<AppUser[]>([]);
+  const accounts = STATIC_PREVIEW ? previewData.INITIAL_USERS as AppUser[] : [];
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    if (STATIC_PREVIEW) { setAccounts(previewData.INITIAL_USERS as AppUser[]); return; }
-    void fetch("/api/auth/demo-accounts").then(async response => {
-      if (!response.ok) throw new Error("Unable to load accounts. Check the server and XAMPP MySQL.");
-      setAccounts((await response.json()).users);
+    if (STATIC_PREVIEW) return;
+    void fetch('/api/auth/config').then(async response => {
+      if (!response.ok) throw new Error('Unable to load registration settings. Please try again.');
+      setVerificationRequired((await response.json()).verificationRequired === true);
     }).catch(error => setError(error.message));
+
   }, []);
   const signIn = async (event: React.FormEvent) => {
     event.preventDefault(); if (busy) return;
@@ -456,6 +393,7 @@ function LoginView({ onLogin }: { onLogin: (user: AppUser) => void }) {
     } catch (error) { setError(error instanceof Error ? error.message : "Unable to sign in"); }
     finally { setBusy(false); }
   };
+  if (clientAccess && !STATIC_PREVIEW && verificationRequired !== null) return <ClientAccess initialMode={clientAccess} verificationRequired={verificationRequired} onRegistered={user => onLogin(user, true)} onBack={() => setClientAccess(null)} />;
   return (
     <div className="login-page min-h-screen flex items-center justify-center p-4 sm:p-8 relative">
       <Background />
@@ -502,16 +440,17 @@ function LoginView({ onLogin }: { onLogin: (user: AppUser) => void }) {
           {error && <div className="p-3 bg-red-50/80 border border-red-200/70 rounded-xl text-sm text-red-700 flex items-center gap-2"><AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}</div>}
           <button type="submit" disabled={busy} className="ui-button-primary w-full font-semibold py-3 rounded-lg text-sm">{busy ? "Signing in…" : "Sign In"}</button>
         </form>}
-        {accounts.length > 0 && <div className="mt-6 pt-5 border-t border-slate-200">
+        {!STATIC_PREVIEW && <div className="client-signup-links"><span>New here?</span><button type="button" disabled={verificationRequired === null} onClick={() => setClientAccess('register')}>Create client account</button>{verificationRequired && <button type="button" onClick={() => setClientAccess('resend')}>Resend verification</button>}</div>}
+        {STATIC_PREVIEW && accounts.length > 0 && <div className="mt-6 pt-5 border-t border-slate-200">
           <button aria-expanded={demoOpen} onClick={() => setDemoOpen(o => !o)} className="w-full flex items-center justify-between text-sm text-slate-500 hover:text-slate-700 transition-colors">
-            <span>{STATIC_PREVIEW ? "Sample accounts" : "Demo accounts"}</span>
+            <span>Sample accounts</span>
             <ChevronRight className={`w-4 h-4 transition-transform ${demoOpen ? "rotate-90" : ""}`} />
           </button>
           {demoOpen && (
             <div className="mt-3 space-y-1.5">
-              <p className="text-xs text-slate-500 mb-2">{STATIC_PREVIEW ? "Select a role to browse sample screens. This does not create a login session." : "Select an account, then Sign In. Demo password: MeridianDemo123!"}</p>
+              <p className="text-xs text-slate-500 mb-2">Select a role to browse sample screens. This does not create a login session.</p>
               {accounts.map(u => (
-                <button key={u.id} onClick={() => { if (STATIC_PREVIEW) onLogin(u); else { setEmail(u.email); setPassword("MeridianDemo123!"); setError(""); } }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-50 border border-slate-200 transition-all text-left">
+                <button key={u.id} onClick={() => onLogin(u)} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-50 border border-slate-200 transition-all text-left">
                   <Av initials={u.initials} />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-slate-900 truncate">{u.name}</div>
@@ -535,20 +474,21 @@ function DashboardView({ appointments, activityLog, onViewDetail, onNav, current
   appointments: Appointment[]; activityLog: ActivityEntry[];
   onViewDetail: (id: string) => void; onNav: (v: AppView) => void; currentUser: AppUser;
 }) {
-  const todayApts = appointments.filter(a => a.date === TODAY && a.status !== "cancelled");
+  const today = useBusinessDate();
+  const todayApts = appointments.filter(a => a.date === today && a.status !== "cancelled");
   const recentActivity = [...activityLog].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).slice(0, 8);
-  const todayDisplay = new Date(TODAY + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  const todayDisplay = new Date(today + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
 
   const kpis = [
     { label: "Total",     value: appointments.length,                                                                                Icon: BarChart3,   cls: "text-slate-700",   bg: "bg-slate-100/80 border-slate-200/60" },
     { label: "Today",     value: todayApts.length,                                                                                  Icon: CalendarDays, cls: "text-blue-700",   bg: "bg-blue-100/80 border-blue-200/60" },
     { label: "Pending",   value: appointments.filter(a => a.status === "pending").length,                                           Icon: AlertCircle,  cls: "text-amber-700",  bg: "bg-amber-100/80 border-amber-200/60" },
-    { label: "Upcoming",  value: appointments.filter(a => a.date > TODAY && !["cancelled","completed"].includes(a.status)).length,  Icon: TrendingUp,   cls: "text-indigo-700", bg: "bg-indigo-100/80 border-indigo-200/60" },
+    { label: "Upcoming",  value: appointments.filter(a => a.date > today && !["cancelled","completed"].includes(a.status)).length,  Icon: TrendingUp,   cls: "text-indigo-700", bg: "bg-indigo-100/80 border-indigo-200/60" },
     { label: "Completed", value: appointments.filter(a => a.status === "completed").length,                                        Icon: CheckCheck,   cls: "text-emerald-700",bg: "bg-emerald-100/80 border-emerald-200/60" },
     { label: "Cancelled", value: appointments.filter(a => a.status === "cancelled").length,                                        Icon: Ban,          cls: "text-red-700",    bg: "bg-red-100/80 border-red-200/60" },
   ];
 
-  const upcoming = appointments.filter(a => a.date >= TODAY && !["cancelled","completed"].includes(a.status))
+  const upcoming = appointments.filter(a => a.date >= today && !["cancelled","completed"].includes(a.status))
     .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime)).slice(0, 5);
 
   return (
@@ -566,7 +506,7 @@ function DashboardView({ appointments, activityLog, onViewDetail, onNav, current
         <div>
           <p className="dashboard-date eyebrow mb-2">{todayDisplay}</p>
           <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">Good morning, {currentUser.name.split(" ")[0]}</h1>
-          <p className="text-sm text-slate-500 mt-2">Here's what's happening with your appointments today.</p>
+          <p className="text-sm text-slate-500 mt-2">{currentUser.role === "client" ? "Book a meeting and keep track of your own appointments." : "Here's what's happening with your appointments today."}</p>
         </div>
       </div>
 
@@ -694,19 +634,20 @@ function DashboardView({ appointments, activityLog, onViewDetail, onNav, current
 
 // ─── Appointments List ────────────────────────────────────────────────────────
 
-function AppointmentsView({ appointments, onViewDetail, onEdit, onNewAppointment, onCancel, onComplete, onReschedule, currentUser, initialSearch }: {
-  appointments: Appointment[]; initialSearch: string; onViewDetail: (id: string) => void; onEdit: (id: string) => void;
+function AppointmentsView({ appointments, onViewDetail, onEdit, onNewAppointment, onCancel, onComplete, onReschedule, currentUser, initialSearch, approvalQueue = false }: {
+  appointments: Appointment[]; initialSearch: string; approvalQueue?: boolean; onViewDetail: (id: string) => void; onEdit: (id: string) => void;
   onNewAppointment: () => void; onCancel: (id: string) => void; onComplete: (id: string) => void; onReschedule: (id: string) => void; currentUser: AppUser;
 }) {
   const [tab, setTab] = useState("all");
   const [search, setSearch] = useState("");
   useEffect(() => setSearch(initialSearch), [initialSearch]);
+  const today = useBusinessDate();
   const [executiveFilter, setExecutiveFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("");
   const tabs = [
     { id: "all",         label: "All",         count: () => appointments.length },
-    { id: "today",       label: "Today",        count: () => appointments.filter(a => a.date === TODAY).length },
-    { id: "upcoming",    label: "Upcoming",     count: () => appointments.filter(a => a.date > TODAY && !["cancelled","completed"].includes(a.status)).length },
+    { id: "today",       label: "Today",        count: () => appointments.filter(a => a.date === today).length },
+    { id: "upcoming",    label: "Upcoming",     count: () => appointments.filter(a => a.date > today && !["cancelled","completed"].includes(a.status)).length },
     { id: "pending",     label: "Pending",      count: () => appointments.filter(a => a.status === "pending").length },
     { id: "confirmed",   label: "Confirmed",    count: () => appointments.filter(a => a.status === "confirmed").length },
     { id: "rescheduled", label: "Rescheduled",  count: () => appointments.filter(a => a.status === "rescheduled").length },
@@ -715,26 +656,28 @@ function AppointmentsView({ appointments, onViewDetail, onEdit, onNewAppointment
   ];
   const filtered = useMemo(() => {
     let r = [...appointments];
-    if (tab === "today") r = r.filter(a => a.date === TODAY);
-    else if (tab === "upcoming") r = r.filter(a => a.date > TODAY && !["cancelled","completed"].includes(a.status));
+    if (tab === "today") r = r.filter(a => a.date === today);
+    else if (tab === "upcoming") r = r.filter(a => a.date > today && !["cancelled","completed"].includes(a.status));
     else if (["pending","confirmed","rescheduled","completed","cancelled"].includes(tab)) r = r.filter(a => a.status === tab);
     if (search) { const q = search.toLowerCase(); r = r.filter(a => a.clientName.toLowerCase().includes(q) || a.clientOrg.toLowerCase().includes(q) || a.purpose.toLowerCase().includes(q) || a.id.toLowerCase().includes(q)); }
     if (executiveFilter !== "all") r = r.filter(a => a.executiveId === executiveFilter);
     if (dateFilter) r = r.filter(a => a.date === dateFilter);
     return r.sort((a, b) => b.date.localeCompare(a.date) || b.startTime.localeCompare(a.startTime));
-  }, [appointments, tab, search, executiveFilter, dateFilter]);
+  }, [appointments, tab, search, executiveFilter, dateFilter, today]);
   const isAssistant = currentUser.role === "assistant";
+  const isClient = currentUser.role === "client";
+  const now = useCurrentTime();
   return (
     <div className="p-4 md:p-6 space-y-5">
       <div className="page-toolbar flex items-center justify-between flex-wrap gap-4">
-        <h1 className="text-xl font-semibold text-slate-900 tracking-tight">Appointments</h1>
+        <div><h1 className="text-xl font-semibold text-slate-900 tracking-tight">{approvalQueue ? 'Approval Requests' : pageTitle(currentUser.role, 'appointments')}</h1>{approvalQueue && <p className="text-sm text-slate-500 mt-2">{currentUser.role === 'executive' ? 'Pending requests assigned to you.' : 'Review pending requests across all executives.'}</p>}</div>
         <div className="flex items-center gap-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input aria-label="Search appointments" type="text" placeholder="Search appointments..." value={search} onChange={e => setSearch(e.target.value)}
               className="ui-input pl-9 pr-4 py-2 text-sm rounded-xl border border-slate-200 bg-white backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 w-56 placeholder:text-slate-400" />
           </div>
-          {isAssistant && (
+          {(isAssistant || isClient) && (
             <button onClick={onNewAppointment} className="ui-button-primary flex items-center gap-1.5 text-white px-4 py-2 rounded-xl text-sm font-medium transition-all">
               <Plus className="w-4 h-4" /> New Appointment
             </button>
@@ -742,11 +685,11 @@ function AppointmentsView({ appointments, onViewDetail, onEdit, onNewAppointment
         </div>
       </div>
       <div className="filter-bar ui-surface flex flex-wrap gap-3 items-center">
-        <label className="text-xs text-slate-500">Executive<select aria-label="Filter by executive" value={executiveFilter} onChange={e => setExecutiveFilter(e.target.value)} className={inpOk}><option value="all">All executives</option>{EXECUTIVES.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</select></label>
+        {!(approvalQueue && currentUser.role === 'executive') && <label className="text-xs text-slate-500">Executive<select aria-label="Filter by executive" value={executiveFilter} onChange={e => setExecutiveFilter(e.target.value)} className={inpOk}><option value="all">All executives</option>{EXECUTIVES.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</select></label>}
         <label className="text-xs text-slate-500">Date<input aria-label="Filter by date" type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)} className={inpOk} /></label>
         {(search || dateFilter || executiveFilter !== "all" || tab !== "all") && <button className={inpOk + " w-auto"} onClick={() => {setSearch("");setExecutiveFilter("all");setDateFilter("");setTab("all");}}>Clear</button>}
       </div>
-      <div className={`${glass} rounded-2xl px-4 pt-1 flex gap-0.5 overflow-x-auto`}>
+      {!approvalQueue && <div className={`${glass} rounded-2xl px-4 pt-1 flex gap-0.5 overflow-x-auto`}>
         {tabs.map(t => {
           const count = t.count();
           return (
@@ -755,9 +698,10 @@ function AppointmentsView({ appointments, onViewDetail, onEdit, onNewAppointment
             </button>
           );
         })}
-      </div>
+      </div>}
       <div className={`${glass} rounded-2xl overflow-hidden`}>
-        <div className="overflow-x-auto">
+        <p className="table-scroll-hint">Scroll horizontally to see all details and actions.</p>
+        <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Appointments table">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50">
@@ -769,9 +713,10 @@ function AppointmentsView({ appointments, onViewDetail, onEdit, onNewAppointment
             <tbody className="divide-y divide-slate-100">
               {filtered.map(apt => {
                 const isActive = !["completed","cancelled"].includes(apt.status);
+                const canManage = isAssistant || isClient && apt.clientUserId === currentUser.id && Date.parse(`${apt.date}T${apt.startTime}:00+08:00`) > now;
                 return (
                   <tr key={apt.id} className="hover:bg-slate-50 transition-all">
-                    <td className="px-4 py-3.5 text-xs text-slate-400 font-mono">{apt.id}</td>
+                    <td className="px-4 py-3.5 text-xs text-slate-400 font-mono"><AppointmentReference id={apt.id} /></td>
                     <td className="px-4 py-3.5 font-medium text-slate-900">{apt.clientName}</td>
                     <td className="px-4 py-3.5 text-slate-600 hidden md:table-cell">{apt.clientOrg}</td>
                     <td className="px-4 py-3.5 text-slate-600 max-w-[130px] truncate">{apt.purpose}</td>
@@ -783,10 +728,10 @@ function AppointmentsView({ appointments, onViewDetail, onEdit, onNewAppointment
                     <td className="px-4 py-3.5">
                       <div className="flex items-center gap-0.5">
                         <Tip label="View"><button onClick={() => onViewDetail(apt.id)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50/60 rounded-lg transition-all"><Eye className="w-3.5 h-3.5" /></button></Tip>
-                        {isAssistant && isActive && <>
+                        {canManage && isActive && <>
                           <Tip label="Edit"><button onClick={() => onEdit(apt.id)} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50/60 rounded-lg transition-all"><Pencil className="w-3.5 h-3.5" /></button></Tip>
                           <Tip label="Reschedule"><button onClick={() => onReschedule(apt.id)} className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50/60 rounded-lg transition-all"><RefreshCw className="w-3.5 h-3.5" /></button></Tip>
-                          <Tip label="Complete"><button onClick={() => onComplete(apt.id)} className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50/60 rounded-lg transition-all"><CheckCircle2 className="w-3.5 h-3.5" /></button></Tip>
+                          {isAssistant && <Tip label="Complete"><button onClick={() => onComplete(apt.id)} className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50/60 rounded-lg transition-all"><CheckCircle2 className="w-3.5 h-3.5" /></button></Tip>}
                           <Tip label="Cancel"><button onClick={() => onCancel(apt.id)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50/60 rounded-lg transition-all"><XCircle className="w-3.5 h-3.5" /></button></Tip>
                         </>}
                       </div>
@@ -838,17 +783,19 @@ const Card = ({ title, Icon, children }: { title: string; Icon: React.FC<{ class
   );
 
 
-function NewAppointmentView({ appointments, onSave, onBack, onViewDetail, onNavDashboard, currentUser, editData, preFill, defaultDuration }: {
-  appointments: Appointment[]; onSave: (apt: Appointment) => Promise<Appointment>;
+function NewAppointmentView({ appointments, busySlots, onSave, onBack, onViewDetail, onNavDashboard, currentUser, editData, preFill, defaultDuration }: {
+  appointments: Appointment[]; busySlots: BusySlot[]; onSave: (apt: Appointment) => Promise<Appointment>;
   onBack: () => void; onViewDetail: (id: string) => void; onNavDashboard: () => void;
   currentUser: AppUser; editData?: Appointment; preFill?: { date?: string; startTime?: string; executiveId?: string; duration?: number }; defaultDuration: number;
 }) {
+  const isClient = currentUser.role === "client";
+  const availabilityAppointments = useMemo(() => [...appointments, ...busySlots.map((slot,index) => ({...slot,id:"unavailable-"+index}))], [appointments,busySlots]);
   const [isEdit] = useState(!!editData);
   const [editVersion] = useState(editData?.updatedAt);
   const [step, setStep] = useState<BookStep>("client");
   const [form, setForm] = useState<BookForm>({
-    clientName: editData?.clientName ?? "", clientOrg: editData?.clientOrg ?? "",
-    clientEmail: editData?.clientEmail ?? "", clientPhone: editData?.clientPhone ?? "",
+    clientName: editData?.clientName ?? (isClient ? currentUser.name : ""), clientOrg: editData?.clientOrg ?? (isClient ? currentUser.organization || "" : ""),
+    clientEmail: editData?.clientEmail ?? (isClient ? currentUser.email : ""), clientPhone: editData?.clientPhone ?? (isClient ? currentUser.phone || "" : ""),
     purpose: editData?.purpose ?? "", notes: editData?.notes ?? "",
     executiveId: editData?.executiveId ?? preFill?.executiveId ?? "", date: editData?.date ?? preFill?.date ?? "",
     startTime: editData?.startTime ?? preFill?.startTime ?? "", duration: String(editData?.duration ?? preFill?.duration ?? defaultDuration),
@@ -864,13 +811,15 @@ function NewAppointmentView({ appointments, onSave, onBack, onViewDetail, onNavD
   const confirmingRef = useRef(false);
   const { schedules, loading: schedulesLoading, error: schedulesError, retry: retrySchedules } = useExecutiveSchedules();
   const now = useCurrentTime();
-  const today = businessDate(now);
+  const today = useBusinessDate();
   const [savedApt, setSavedApt] = useState<Appointment | null>(null);
 
   const dur = parseInt(form.duration || "60");
   const endTime = form.startTime ? addMin(form.startTime, dur) : "";
   const selectedExec = EXECUTIVES.find(e => e.id === form.executiveId);
   const selectedPolicy = schedules.find(schedule => schedule.id === form.executiveId)?.policy;
+  const submittingForApproval = (isClient || requiresAppointmentApproval(editData || {}, selectedPolicy))
+    && (!editData || editData.status === 'pending' || editData.executiveId !== form.executiveId || editData.date !== form.date || editData.startTime !== form.startTime || editData.duration !== dur);
   const stepIdx = FORM_STEPS.indexOf(step);
   const invalidateAvailability = () => {
     availabilityController.current?.abort(); availabilityRequest.current++;
@@ -905,7 +854,7 @@ function NewAppointmentView({ appointments, onSave, onBack, onViewDetail, onNavD
   };
 
   const formSignatureRef = useRef(""); formSignatureRef.current = `${form.executiveId}|${form.date}|${form.startTime}|${dur}`;
-  const currentSlot = selectedPolicy ? slotAvailability({ ...form, duration: dur }, selectedPolicy, appointments, { now, excludeId: editData?.id, allowPast: !!editData && editData.date === form.date && editData.startTime === form.startTime }) : null;
+  const currentSlot = selectedPolicy ? slotAvailability({ ...form, duration: dur }, selectedPolicy, availabilityAppointments, { now, excludeId: editData?.id, allowPast: !!editData && editData.date === form.date && editData.startTime === form.startTime }) : null;
   const availabilityVerified = avConflict === false && !availabilityBusy && !availabilityError && !schedulesLoading && !schedulesError && currentSlot?.available && verifiedSignature === formSignatureRef.current;
   const checkAvailability = async (candidate: BookForm): Promise<boolean> => {
     const signature = `${candidate.executiveId}|${candidate.date}|${candidate.startTime}|${Number(candidate.duration)}`;
@@ -925,7 +874,7 @@ function NewAppointmentView({ appointments, onSave, onBack, onViewDetail, onNavD
         return false;
       }
       setAvConflict(false); setVerifiedSignature(signature);
-      if (data.requireApproval) toast.info('This executive requires approval. Your request will remain pending.');
+      if (data.requireApproval) toast.info('This appointment requires approval. Your request will remain pending.');
       return true;
     } catch (failure) {
       if (request === availabilityRequest.current && !controller.signal.aborted) setAvailabilityError('Unable to check current availability. Please retry.');
@@ -961,7 +910,7 @@ function NewAppointmentView({ appointments, onSave, onBack, onViewDetail, onNavD
         id: editData?.id ?? genId(), clientName: form.clientName, clientOrg: form.clientOrg,
         clientEmail: form.clientEmail, clientPhone: form.clientPhone, purpose: form.purpose, notes: form.notes,
         executiveId: form.executiveId, date: form.date, startTime: form.startTime, duration: dur,
-        status: editData?.status ?? "confirmed", createdAt: editData?.createdAt ?? now, updatedAt: editVersion ?? now,
+        status: submittingForApproval ? "pending" : editData?.status ?? "confirmed", createdAt: editData?.createdAt ?? now, updatedAt: editVersion ?? now,
         createdBy: editData?.createdBy ?? currentUser.name, updatedBy: currentUser.name,
       };
       const saved = await onSave(apt);
@@ -973,11 +922,11 @@ function NewAppointmentView({ appointments, onSave, onBack, onViewDetail, onNavD
 
   if (step === "confirmed" && savedApt) return (
     <div className="booking-confirmation p-4 md:p-6 flex flex-col items-center text-center max-w-lg mx-auto py-12">
-      <div className="w-16 h-16 bg-emerald-100/80 rounded-full flex items-center justify-center mb-4 border border-emerald-200/60 shadow-lg shadow-emerald-200/40">
-        <CheckCircle2 className="w-8 h-8 text-emerald-600" />
+      <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 border shadow-lg ${savedApt.status === 'pending' ? 'bg-amber-100/80 border-amber-200/60 shadow-amber-200/40' : 'bg-emerald-100/80 border-emerald-200/60 shadow-emerald-200/40'}`}>
+        {savedApt.status === 'pending' ? <AlertCircle className="w-8 h-8 text-amber-600" /> : <CheckCircle2 className="w-8 h-8 text-emerald-600" />}
       </div>
       <h2 className="text-xl font-semibold text-slate-900 mb-1">{savedApt.status === "pending" ? "Awaiting Approval" : isEdit ? "Appointment Updated!" : "Appointment Confirmed!"}</h2>
-      <p className="text-sm text-slate-500 mb-8">{isEdit ? "The appointment has been successfully updated." : "The appointment has been successfully created."}</p>
+      <p className="text-sm text-slate-500 mb-8">{savedApt.status === 'pending' ? 'Your request is pending. The assigned executive or an administrator must approve it before it is confirmed.' : isEdit ? "The appointment has been successfully updated." : "The appointment has been successfully created."}</p>
       <div className={`${glass} rounded-2xl p-6 w-full text-left space-y-3 mb-8`}>
         <div className="flex items-center justify-between text-xs mb-2"><span className="font-mono text-slate-400">{savedApt.id}</span><StatusBadge status={savedApt.status} /></div>
         {[["Client", savedApt.clientName],["Organization", savedApt.clientOrg],["Executive", getExec(savedApt.executiveId)?.name],["Date", fmtDateShort(savedApt.date)],["Time", `${fmtTime(savedApt.startTime)} – ${fmtTime(addMin(savedApt.startTime, savedApt.duration))}`],["Duration", `${savedApt.duration} minutes`]].map(([l, v]) => (
@@ -1019,11 +968,12 @@ function NewAppointmentView({ appointments, onSave, onBack, onViewDetail, onNavD
 
       {step === "client" && (
         <div className="space-y-5">
-          <Card title="Client / Visitor Information" Icon={User}>
+          <Card title={isClient ? "Your Contact Information" : "Client / Visitor Information"} Icon={User}>
+            {isClient && <p className="text-xs text-slate-500 mb-5">Your name and verified email are linked to your account. Review your contact details before continuing.</p>}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <F label="Full Name" err={errors.clientName}><input className={errors.clientName ? inpErr : inpOk} placeholder="Client full name" value={form.clientName} onChange={e => { def("clientName", e.target.value); setErrors(p => ({ ...p, clientName: undefined })); }} /></F>
+              <F label="Full Name" err={errors.clientName}><input readOnly={isClient} className={errors.clientName ? inpErr : inpOk} placeholder="Client full name" value={form.clientName} onChange={e => { def("clientName", e.target.value); setErrors(p => ({ ...p, clientName: undefined })); }} /></F>
               <F label="Organization" err={errors.clientOrg}><input className={errors.clientOrg ? inpErr : inpOk} placeholder="Company or institution" value={form.clientOrg} onChange={e => { def("clientOrg", e.target.value); setErrors(p => ({ ...p, clientOrg: undefined })); }} /></F>
-              <F label="Email Address" err={errors.clientEmail}><input type="email" className={errors.clientEmail ? inpErr : inpOk} placeholder="email@example.com" value={form.clientEmail} onChange={e => { def("clientEmail", e.target.value); setErrors(p => ({ ...p, clientEmail: undefined })); }} /></F>
+              <F label="Email Address" err={errors.clientEmail}><input readOnly={isClient} type="email" className={errors.clientEmail ? inpErr : inpOk} placeholder="email@example.com" value={form.clientEmail} onChange={e => { def("clientEmail", e.target.value); setErrors(p => ({ ...p, clientEmail: undefined })); }} /></F>
               <F label="Phone Number" err={errors.clientPhone}><input type="tel" className={errors.clientPhone ? inpErr : inpOk} placeholder="+1 (555) 000-0000" value={form.clientPhone} onChange={e => { def("clientPhone", e.target.value); setErrors(p => ({ ...p, clientPhone: undefined })); }} /></F>
             </div>
           </Card>
@@ -1110,7 +1060,7 @@ function NewAppointmentView({ appointments, onSave, onBack, onViewDetail, onNavD
                 {schedulesError && <p role="alert" className="text-sm text-amber-800 mb-3">{schedulesError}<button onClick={retrySchedules} className="ml-2 underline">Retry</button></p>}
                 <div className="grid grid-cols-4 gap-1.5">
                   {TIME_OPTIONS.map(t => {
-                    const slot = selectedPolicy && !schedulesError && !schedulesLoading ? slotAvailability({ executiveId: form.executiveId, date: form.date, startTime: t, duration: dur }, selectedPolicy, appointments, { now, excludeId: editData?.id, allowPast: !!editData && editData.date === form.date && editData.startTime === t }) : null;
+                    const slot = selectedPolicy && !schedulesError && !schedulesLoading ? slotAvailability({ executiveId: form.executiveId, date: form.date, startTime: t, duration: dur }, selectedPolicy, availabilityAppointments, { now, excludeId: editData?.id, allowPast: !!editData && editData.date === form.date && editData.startTime === t }) : null;
                     const unavailable = !slot?.available;
                     const isSel = t === form.startTime;
                     return (
@@ -1155,7 +1105,7 @@ function NewAppointmentView({ appointments, onSave, onBack, onViewDetail, onNavD
                 {form.notes && <div className="md:col-span-2"><div className="text-xs text-slate-500 uppercase tracking-wide mb-1">Notes</div><div className="text-slate-700 text-sm">{form.notes}</div></div>}
               </div>
               <div role="status" className={`flex items-center gap-2 text-xs rounded-xl p-3 border ${availabilityVerified ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-amber-900 bg-amber-50 border-amber-200'}`}>
-                <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> {confirming ? 'Checking current availability before saving…' : availabilityVerified ? `${selectedExec?.name} is available at this time. Ready to confirm.` : 'Availability needs to be checked again. Return to Availability before confirming.'}
+                <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> {confirming ? 'Checking current availability before saving…' : availabilityVerified ? `${selectedExec?.name} is available at this time. ${submittingForApproval ? 'Your request will remain pending until approved.' : 'Ready to confirm.'}` : 'Availability needs to be checked again. Return to Availability before submitting.'}
               </div>
             </div>
           </div>
@@ -1165,7 +1115,7 @@ function NewAppointmentView({ appointments, onSave, onBack, onViewDetail, onNavD
               <button disabled={confirming} onClick={() => setStep("client")} className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-all"><Pencil className="w-3.5 h-3.5" /> Edit</button>
             </div>
             <button disabled={confirming || !availabilityVerified} onClick={handleConfirm} className="ui-button-primary flex items-center gap-2 px-6 py-2.5 text-sm font-medium text-white rounded-xl transition-all">
-              <Check className="w-4 h-4" /> {confirming ? 'Checking and saving…' : isEdit ? "Update Appointment" : "Confirm Appointment"}
+              <Check className="w-4 h-4" /> {confirming ? 'Checking and saving…' : isEdit ? "Update Appointment" : submittingForApproval ? "Submit Appointment Request" : "Confirm Appointment"}
             </button>
           </div>
         </div>
@@ -1183,6 +1133,8 @@ function AppointmentDetailView({ apt, activityLog, onBack, onEdit, onCancel, onC
   const exec = getExec(apt.executiveId);
   const isActive = !["completed","cancelled"].includes(apt.status);
   const isAssistant = currentUser.role === "assistant";
+  const now = useCurrentTime();
+  const canManage = isAssistant || currentUser.role === "client" && apt.clientUserId === currentUser.id && Date.parse(`${apt.date}T${apt.startTime}:00+08:00`) > now;
   const endTime = addMin(apt.startTime, apt.duration);
   const timeline = activityLog.filter(a => a.aptId === apt.id).sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
@@ -1204,11 +1156,11 @@ function AppointmentDetailView({ apt, activityLog, onBack, onEdit, onCancel, onC
             <p className="detail-reference text-xs text-slate-500 font-mono mt-2">{apt.id}</p>
           </div>
         </div>
-        {isAssistant && isActive && (
+        {canManage && isActive && (
           <div className="detail-actions flex items-center gap-2 flex-wrap">
             <Tip label="Edit"><button onClick={() => onEdit(apt.id)} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-all "><Pencil className="w-3.5 h-3.5" /> Edit</button></Tip>
             <Tip label="Reschedule"><button onClick={() => onReschedule(apt.id)} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-indigo-700 bg-indigo-50/70 hover:bg-indigo-100/80 border border-indigo-200/60 rounded-xl transition-all "><RefreshCw className="w-3.5 h-3.5" /> Reschedule</button></Tip>
-            <Tip label="Mark as Completed"><button onClick={() => onComplete(apt.id)} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-emerald-700 bg-emerald-50/70 hover:bg-emerald-100/80 border border-emerald-200/60 rounded-xl transition-all "><CheckCircle2 className="w-3.5 h-3.5" /> Complete</button></Tip>
+            {isAssistant && <Tip label="Mark as Completed"><button onClick={() => onComplete(apt.id)} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-emerald-700 bg-emerald-50/70 hover:bg-emerald-100/80 border border-emerald-200/60 rounded-xl transition-all "><CheckCircle2 className="w-3.5 h-3.5" /> Complete</button></Tip>}
             <Tip label="Cancel Appointment"><button onClick={() => onCancel(apt.id)} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-red-700 bg-red-50/70 hover:bg-red-100/80 border border-red-200/60 rounded-xl transition-all "><XCircle className="w-3.5 h-3.5" /> Cancel</button></Tip>
           </div>
         )}
@@ -1316,7 +1268,7 @@ function HistoryView({ appointments, onViewDetail }: { appointments: Appointment
   return (
     <div className="p-4 md:p-6 space-y-5">
       <div className="page-toolbar flex items-center justify-between flex-wrap gap-4">
-        <h1 className="text-xl font-semibold text-slate-900 tracking-tight">History</h1>
+        <h1 className="text-xl font-semibold text-slate-900 tracking-tight">Appointment History</h1>
         <div className="flex items-center gap-3 flex-wrap">
           <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input aria-label="Search appointment history" type="text" placeholder="Search history..." value={search} onChange={e => setSearch(e.target.value)} className="ui-input pl-9 pr-4 py-2 text-sm rounded-xl border border-slate-200 bg-white backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 w-48 placeholder:text-slate-400" /></div>
           <select aria-label="Filter history by status" value={statusFilter} onChange={e => setStatusFilter(e.target.value as "all"|"completed"|"cancelled")} className="px-3 py-2 text-sm rounded-xl border border-slate-200 bg-white backdrop-blur-sm focus:outline-none"><option value="all">All Status</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select>
@@ -1325,7 +1277,8 @@ function HistoryView({ appointments, onViewDetail }: { appointments: Appointment
         </div>
       </div>
       <div className={`${glass} rounded-2xl overflow-hidden`}>
-        <div className="overflow-x-auto">
+        <p className="table-scroll-hint">Scroll horizontally to see all details and actions.</p>
+        <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Appointment history table">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50">
@@ -1337,7 +1290,7 @@ function HistoryView({ appointments, onViewDetail }: { appointments: Appointment
             <tbody className="divide-y divide-slate-100">
               {history.map(apt => (
                 <tr key={apt.id} className="hover:bg-slate-50 transition-all">
-                  <td className="px-4 py-3.5 text-xs text-slate-400 font-mono">{apt.id}</td>
+                  <td className="px-4 py-3.5 text-xs text-slate-400 font-mono"><AppointmentReference id={apt.id} /></td>
                   <td className="px-4 py-3.5 font-medium text-slate-900">{apt.clientName}</td>
                   <td className="px-4 py-3.5 text-slate-600 hidden md:table-cell">{apt.clientOrg}</td>
                   <td className="px-4 py-3.5 text-slate-600 max-w-[140px] truncate">{apt.purpose}</td>
@@ -1359,11 +1312,50 @@ function HistoryView({ appointments, onViewDetail }: { appointments: Appointment
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
-function SettingsView({ currentUser, users, onUpdateUsers, onPasswordChanged, preferences, onSavePreferences }: { currentUser: AppUser; users: AppUser[]; onUpdateUsers: (id: string, active: boolean) => Promise<void>; onPasswordChanged: () => void; preferences: { calendarView: "day" | "week"; duration: number }; onSavePreferences: (input: { calendarView: "day" | "week"; duration: number }) => Promise<void> }) {
-  const isAdmin = currentUser.role === "admin";
-  const canManageAvailability = isAdmin || currentUser.role === "executive";
-  type SettingsTab = "profile" | "account" | "notifications" | "preferences" | "availability";
-  const [activeTab, setActiveTab] = useState<SettingsTab>(canManageAvailability ? "availability" : "profile");
+function UserManagementView({ currentUser, users, onUpdateUsers }: { currentUser: AppUser; users: AppUser[]; onUpdateUsers: (id: string, active: boolean) => Promise<void> }) {
+  if (currentUser.role !== 'admin') return null;
+  return <div className="p-4 md:p-6 space-y-5"><div className="settings-page-heading"><h1 className="text-xl font-semibold text-slate-900 tracking-tight">User Management</h1><p>Manage account access for clients and staff.</p></div>
+        <div className={`settings-users ${glass} rounded-2xl overflow-hidden`}>
+          <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+            <div className="flex items-center gap-2"><Users className="w-4 h-4 text-slate-500" /><h3 className="text-sm font-semibold text-slate-900">User accounts</h3></div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50">
+                  {["User","Email","Role","Status","Actions"].map(h => <th key={h} className={`text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide ${h === "Email" ? "hidden md:table-cell" : ""}`}>{h}</th>)}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {users.map(u => (
+                  <tr key={u.id} className="hover:bg-slate-50 transition-all">
+                    <td className="px-5 py-3.5"><div className="flex items-center gap-2.5"><Av initials={u.initials} /><div><div className="font-medium text-slate-900">{u.name}</div><div className="text-xs text-slate-500">{u.title}</div></div></div></td>
+                    <td className="px-4 py-3.5 text-slate-600 hidden md:table-cell">{u.email}</td>
+                    <td className="px-4 py-3.5 text-slate-600 capitalize">{u.role}</td>
+                    <td className="px-4 py-3.5"><span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full border ${u.active ? "bg-emerald-50/80 text-emerald-700 border-emerald-200/70" : "bg-slate-100/80 text-slate-500 border-slate-300/70"}`}><span className={`w-1.5 h-1.5 rounded-full ${u.active ? "bg-emerald-500" : "bg-slate-400"}`} />{u.active ? "Active" : "Inactive"}</span></td>
+                    <td className="px-4 py-3.5">
+                      <div className="flex items-center gap-1">
+                        <Tip label={u.active ? "Deactivate" : "Activate"}>
+                          <button disabled={STATIC_PREVIEW || u.id === currentUser.id}
+                            onClick={async () => { try { await onUpdateUsers(u.id, !u.active); toast.success(`${u.name} ${u.active ? "deactivated" : "activated"}`); } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to update user"); } }}
+                            className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50/60 rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                            {u.active ? <XCircle className="w-3.5 h-3.5" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                          </button>
+                        </Tip>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+  </div>;
+}
+
+function SettingsView({ onLogout, currentUser, onPasswordChanged, preferences, onSavePreferences, onProfileSaved }: { onProfileSaved: (user: AppUser) => void; onLogout: () => void; currentUser: AppUser; onPasswordChanged: () => void; preferences: { calendarView: "day" | "week"; duration: number }; onSavePreferences: (input: { calendarView: "day" | "week"; duration: number }) => Promise<void> }) {
+  type SettingsTab = "profile" | "account" | "notifications" | "preferences";
+  const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
   const [notifications, setNotifications] = useState(NOTIFICATION_DEFAULTS);
   const [notificationBusy, setNotificationBusy] = useState(true);
   const [mailConfigured, setMailConfigured] = useState(false);
@@ -1395,7 +1387,6 @@ function SettingsView({ currentUser, users, onUpdateUsers, onPasswordChanged, pr
     finally { setChangingPassword(false); }
   };
   const tabs: { id: SettingsTab; label: string; Icon: typeof User }[] = [
-    ...(canManageAvailability ? [{ id: "availability" as const, label: "Availability", Icon: CalendarDays }] : []),
     { id: "profile", label: "Profile", Icon: User },
     { id: "account", label: "Account", Icon: Settings },
     { id: "notifications", label: "Notifications", Icon: Bell },
@@ -1406,13 +1397,13 @@ function SettingsView({ currentUser, users, onUpdateUsers, onPasswordChanged, pr
       <div className="settings-page-heading">
         <h1 className="text-xl font-semibold text-slate-900 tracking-tight">Settings</h1>
         <p>Manage your workspace, account and appointment preferences.</p>
+        <button type="button" onClick={onLogout} className="settings-signout ui-button-secondary rounded-lg px-3 py-2 text-sm flex items-center gap-2"><LogOut className="w-4 h-4" />Sign Out</button>
       </div>
       <div className="settings-layout">
       <nav aria-label="Settings sections" className="settings-navigation">
         {tabs.map(t => <button key={t.id} onClick={() => setActiveTab(t.id)} aria-current={activeTab === t.id ? "page" : undefined} className={`settings-nav-item ${activeTab === t.id ? "is-active" : ""}`}><t.Icon className="w-4 h-4" />{t.label}<ChevronRight className="settings-nav-chevron w-3.5 h-3.5" /></button>)}
       </nav>
       <div className="settings-content">
-      {canManageAvailability && <div hidden={activeTab !== "availability"} className="settings-availability"><ExecutiveScheduling user={currentUser} /></div>}
 
       {activeTab === "profile" && (
         <div className={`${glass} rounded-2xl overflow-hidden`}>
@@ -1428,15 +1419,7 @@ function SettingsView({ currentUser, users, onUpdateUsers, onPasswordChanged, pr
                 </span>
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
-              {[{ label: "Display Name", value: currentUser.name },{ label: "Email", value: currentUser.email },{ label: "Title", value: currentUser.title },{ label: "Role", value: currentUser.role }].map(f => (
-                <div key={f.label}>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{f.label}</label>
-                  <div className="px-3 py-2.5 text-sm rounded-xl border border-slate-200 bg-slate-50 text-slate-700 break-words">{f.value}</div>
-                </div>
-              ))}
-            </div>
-            <button disabled={STATIC_PREVIEW} onClick={() => toast.success("Profile saved")} className="ui-button-primary px-4 py-2 text-sm font-medium text-white rounded-xl transition-all">Save Changes</button>
+            <ProfileEditor key={currentUser.id} user={currentUser} onSaved={onProfileSaved} />
           </div>
         </div>
       )}
@@ -1498,45 +1481,7 @@ function SettingsView({ currentUser, users, onUpdateUsers, onPasswordChanged, pr
         </div>
       )}
 
-      {isAdmin && (
-        <div className={`settings-users ${glass} rounded-2xl overflow-hidden`}>
-          <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-            <div className="flex items-center gap-2"><Users className="w-4 h-4 text-slate-500" /><h3 className="text-sm font-semibold text-slate-900">User Management</h3></div>
-            <button disabled={STATIC_PREVIEW} onClick={() => toast("Add user — coming soon")} className="ui-button-primary flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white rounded-xl transition-all"><Plus className="w-3.5 h-3.5" /> Add User</button>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50">
-                  {["User","Email","Role","Status","Actions"].map(h => <th key={h} className={`text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide ${h === "Email" ? "hidden md:table-cell" : ""}`}>{h}</th>)}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {users.map(u => (
-                  <tr key={u.id} className="hover:bg-slate-50 transition-all">
-                    <td className="px-5 py-3.5"><div className="flex items-center gap-2.5"><Av initials={u.initials} /><div><div className="font-medium text-slate-900">{u.name}</div><div className="text-xs text-slate-500">{u.title}</div></div></div></td>
-                    <td className="px-4 py-3.5 text-slate-600 hidden md:table-cell">{u.email}</td>
-                    <td className="px-4 py-3.5 text-slate-600 capitalize">{u.role}</td>
-                    <td className="px-4 py-3.5"><span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full border ${u.active ? "bg-emerald-50/80 text-emerald-700 border-emerald-200/70" : "bg-slate-100/80 text-slate-500 border-slate-300/70"}`}><span className={`w-1.5 h-1.5 rounded-full ${u.active ? "bg-emerald-500" : "bg-slate-400"}`} />{u.active ? "Active" : "Inactive"}</span></td>
-                    <td className="px-4 py-3.5">
-                      <div className="flex items-center gap-1">
-                        <Tip label="Edit User"><button onClick={() => toast("Edit user — coming soon")} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50/60 rounded-lg transition-all"><Pencil className="w-3.5 h-3.5" /></button></Tip>
-                        <Tip label={u.active ? "Deactivate" : "Activate"}>
-                          <button disabled={STATIC_PREVIEW || u.id === currentUser.id}
-                            onClick={async () => { try { await onUpdateUsers(u.id, !u.active); toast.success(`${u.name} ${u.active ? "deactivated" : "activated"}`); } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to update user"); } }}
-                            className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50/60 rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed">
-                            {u.active ? <XCircle className="w-3.5 h-3.5" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                          </button>
-                        </Tip>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+
       </div>
       </div>
     </div>
@@ -1545,17 +1490,16 @@ function SettingsView({ currentUser, users, onUpdateUsers, onPasswordChanged, pr
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
-const VIEW_TITLES: Record<AppView, string> = {
-  dashboard: "Dashboard", appointments: "Appointments", "new-appointment": "New Appointment",
-  detail: "Appointment Details", schedule: "Schedule", history: "History", settings: "Settings", "system-history": "System History",
-};
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
-  const [view, setView] = useState<AppView>("dashboard");
+  const [requestedView, setRequestedView] = useState<AppView>("dashboard");
+  const view: AppView = canAccessView(currentUser?.role, requestedView) ? requestedView : 'dashboard';
+  const setView = (next: AppView) => setRequestedView(canAccessView(currentUser?.role, next) ? next : 'dashboard');
   const [globalSearch, setGlobalSearch] = useState("");
   const [prevView, setPrevView] = useState<AppView>("appointments");
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [busySlots, setBusySlots] = useState<BusySlot[]>([]);
   const [users, setUsers] = useState<AppUser[]>([]);
   const [activityLog, setActivityLog] = useState<ActivityEntry[]>([]);
   const [selectedAptId, setSelectedAptId] = useState<string | null>(null);
@@ -1572,30 +1516,49 @@ export default function App() {
     const data = await response.json(); if (!response.ok) throw new Error(data.error || "Unable to save preferences"); setPreferences(data.preferences);
   };
 
-  const canCreate = currentUser?.role === "assistant" && !STATIC_PREVIEW;
+  const canCreate = !!currentUser && ["assistant", "client"].includes(currentUser.role) && !STATIC_PREVIEW;
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [syncError,setSyncError]=useState(''),[lastSync,setLastSync]=useState<number|null>(null),[syncBusy,setSyncBusy]=useState(false);
+  const [notificationData,setNotificationData]=useState<NotificationData>({entries:[],unread:0});
+  const generation=useRef(0),dataRevision=useRef(0),inFlight=useRef<Promise<boolean>|null>(null);
+  const expireSession=()=>{setLoading(false);setSyncBusy(false);setLoadError('');generation.current++;inFlight.current=null;setCurrentUser(null);setAppointments([]);setActivityLog([]);setUsers([]);setBusySlots([]);setNotificationData({entries:[],unread:0});setLastSync(null);setSyncError('');setCancelId(null);setCompleteId(null);setRescheduleId(null);setSelectedAptId(null);setEditAptId(null);setAptPreFill(undefined);setGlobalSearch('');setView('dashboard');};
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
-  const load = async (showLoading = true) => {
+  const load = async (showLoading = true): Promise<boolean> => {
     if (STATIC_PREVIEW) {
       EXECUTIVES = previewData.EXECUTIVES;
-      setAppointments(previewData.INITIAL_APPOINTMENTS as Appointment[]); setActivityLog(previewData.INITIAL_ACTIVITY as ActivityEntry[]); setUsers(previewData.INITIAL_USERS as AppUser[]); setLoading(false); return;
+      setAppointments(previewData.INITIAL_APPOINTMENTS as Appointment[]); setActivityLog(previewData.INITIAL_ACTIVITY as ActivityEntry[]); setUsers(previewData.INITIAL_USERS as AppUser[]); setLoading(false); return true;
     }
-    if (showLoading) { setLoading(true); setLoadError(""); }
-    try {
-      const response = await fetch("/api/state");
-      if (response.status === 401) { setCurrentUser(null); setAppointments([]); setActivityLog([]); setUsers([]); return; }
-      if (!response.ok) throw new Error("Unable to load appointments. Please try again.");
-      const data = await response.json();
-      if (data.executives) EXECUTIVES = data.executives;
-      setAppointments(data.appointments); setActivityLog(data.activityLog); setUsers(data.users || []); if (data.preferences) setPreferences(data.preferences);
-    } catch (error) { if (showLoading) setLoadError(error instanceof Error ? error.message : "Unable to load appointments"); }
-    finally { if (showLoading) setLoading(false); }
+    if(inFlight.current)return inFlight.current;
+    const version=generation.current,revision=dataRevision.current;
+    if (showLoading) { setLoading(true); setLoadError(''); }
+    setSyncBusy(true);
+    const request=(async()=>{
+      try {
+        const responses=await Promise.all(['/api/state','/api/notifications'].map(path=>fetch(path,{signal:AbortSignal.timeout(15000)}).then(response=>{if(response.status===401&&version===generation.current)expireSession();return response;})));
+        if(version!==generation.current)return false;
+        if(responses.some(response=>response.status===401)){expireSession();return false;}
+        if(responses.some(response=>!response.ok))throw new Error('Unable to refresh appointments and notifications. Displayed data may be outdated.');
+        const [data,notifications]=await Promise.all(responses.map(response=>response.json()));
+        if(!Array.isArray(data.appointments)||!Array.isArray(data.activityLog)||!Array.isArray(notifications.entries)||typeof notifications.unread!=='number')throw new Error('The server returned incomplete workspace data. Displayed data may be outdated.');
+        if(version!==generation.current||revision!==dataRevision.current)return false;
+        if (data.executives) EXECUTIVES = data.executives;
+        setAppointments(data.appointments); setActivityLog(data.activityLog); setBusySlots(data.busySlots || []); setUsers(data.users || []); if (data.preferences) setPreferences(data.preferences);
+        setNotificationData(notifications);setLastSync(Date.now());setSyncError('');return true;
+      } catch (error) {
+        if(version!==generation.current)return false;
+        const message=error instanceof DOMException&&['TimeoutError','AbortError'].includes(error.name)?'The server took too long to respond. Displayed data may be outdated.':error instanceof TypeError?'Unable to reach the server. Displayed data may be outdated.':error instanceof Error?error.message:'Unable to refresh workspace data. Displayed data may be outdated.';
+        setSyncError(message);if(showLoading)setLoadError(message);return false;
+      } finally {if(version===generation.current){if(showLoading)setLoading(false);setSyncBusy(false);}}
+    })();
+    inFlight.current=request;
+    try{return await request;}finally{if(inFlight.current===request)inFlight.current=null;}
   };
   useEffect(() => {
     if (STATIC_PREVIEW) { setLoading(false); return; }
+    if (window.location.hash.startsWith('#verify=')) { setLoading(false); return; }
     void (async () => {
       try {
         const response = await fetch("/api/auth/me");
@@ -1607,19 +1570,27 @@ export default function App() {
     })();
   }, []);
   useEffect(() => {
-    if (!currentUser || STATIC_PREVIEW || view === "new-appointment" || cancelId || completeId || rescheduleId) return;
-    let running=false;
-    const refresh=async()=>{if(running||document.hidden)return;running=true;try{await load(false);}finally{running=false;}};
-    const timer=setInterval(()=>void refresh(),3000);
-    window.addEventListener('focus',refresh);
-    return()=>{clearInterval(timer);window.removeEventListener('focus',refresh);};
+    if (!currentUser || STATIC_PREVIEW || view === 'new-appointment' || cancelId || completeId || rescheduleId) return;
+    let active=true,running=false,failures=0,timer:ReturnType<typeof setTimeout>,nextAt=0;
+    const schedule=(delay:number)=>{clearTimeout(timer);nextAt=Date.now()+delay;timer=setTimeout(()=>void refresh(),delay);};
+    const refresh=async(force=false)=>{
+      if(!active||running||document.hidden)return;
+      if(!force&&Date.now()<nextAt)return;
+      if(!navigator.onLine){setSyncError('You are offline. Displayed data may be outdated.');schedule(60000);return;}
+      if(savingRef.current){schedule(3000);return;}
+      running=true;
+      try{const ok=await load(false);failures=ok?0:failures+1;}finally{running=false;if(active)schedule(failures?Math.min(60000,3000*2**Math.min(failures,5)):3000);}
+    };
+    const focus=()=>void refresh(),online=()=>{failures=0;void refresh(true);},offline=()=>setSyncError('You are offline. Displayed data may be outdated.'),visible=()=>{if(!document.hidden)void refresh();};
+    schedule(3000);window.addEventListener('focus',focus);window.addEventListener('online',online);window.addEventListener('offline',offline);document.addEventListener('visibilitychange',visible);
+    return()=>{active=false;clearTimeout(timer);window.removeEventListener('focus',focus);window.removeEventListener('online',online);window.removeEventListener('offline',offline);document.removeEventListener('visibilitychange',visible);};
   },[currentUser?.id,view,cancelId,completeId,rescheduleId]);
   const logout = async () => {
     if (STATIC_PREVIEW) { setCurrentUser(null); setView("dashboard"); return; }
     try {
       const response = await fetch("/api/auth/logout", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       if (!response.ok) throw new Error("Unable to sign out. Please try again.");
-      setCurrentUser(null); setAppointments([]); setActivityLog([]); setUsers([]);
+      expireSession();
       setCancelId(null); setCompleteId(null); setRescheduleId(null); setEditAptId(null); setView("dashboard");
     } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to sign out"); }
   };
@@ -1631,21 +1602,21 @@ export default function App() {
   };
   const persist = async (url: string, method: string, input: unknown): Promise<Appointment> => {
     if (savingRef.current) throw new Error("A save is already in progress");
-    savingRef.current = true; setSaving(true);
+    dataRevision.current++;savingRef.current = true; setSaving(true);
     try {
       const response = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
       const data = await response.json();
       if (!response.ok) {
-        if (response.status === 401) { setCurrentUser(null); setAppointments([]); setActivityLog([]); setUsers([]); }
+        if (response.status === 401) expireSession();
         if (response.status === 409) await load(false);
         throw new Error(data.error || "Unable to save appointment");
       }
-      setAppointments(data.appointments); setActivityLog(data.activityLog);
+      setAppointments(data.appointments); setActivityLog(data.activityLog); setBusySlots(data.busySlots || []);
       return data.appointment;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to save appointment. Please try again.");
       throw error;
-    } finally { savingRef.current = false; setSaving(false); }
+    } finally { dataRevision.current++;savingRef.current = false; setSaving(false); }
   };
 
   const handleViewDetail = (id: string) => { setPrevView(view === "detail" ? prevView : view); setSelectedAptId(id); setView("detail"); };
@@ -1679,7 +1650,7 @@ export default function App() {
     } catch { /* Keep the dialog open for retry. */ }
   };
 
-  if (!loading && !currentUser) return <LoginView onLogin={u => { setView("dashboard"); setGlobalSearch(""); setCurrentUser(u); void load(); toast.success(`Welcome back, ${u.name.split(" ")[0]}!`); }} />;
+  if (!loading && (!currentUser || window.location.hash.startsWith("#verify="))) return <LoginView onLogin={(u, registered) => { setView("dashboard"); setGlobalSearch(""); generation.current++;inFlight.current=null;setCurrentUser(u);setSyncError('');setLastSync(null); void load(); toast.success(registered ? `Account created. Welcome, ${u.name.split(" ")[0]}!` : `Welcome back, ${u.name.split(" ")[0]}!`); }} />;
 
   if (loading || loadError) return <div className="min-h-screen flex flex-col items-center justify-center gap-4 text-slate-700" role="status">
     <p>{loading ? "Loading appointments…" : loadError}</p>
@@ -1687,6 +1658,7 @@ export default function App() {
   </div>;
 
   if (!currentUser) return null;
+  if (!canAccessView(currentUser.role, 'dashboard')) return <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-6"><p role="alert">Your account does not have access to this workspace.</p><button type="button" onClick={() => void logout()} className="ui-button-primary px-4 py-2 rounded-lg">Sign Out</button></div>;
 
   const selectedApt = selectedAptId ? appointments.find(a => a.id === selectedAptId) ?? null : null;
   const editApt = editAptId ? appointments.find(a => a.id === editAptId) : undefined;
@@ -1702,15 +1674,19 @@ export default function App() {
       {completeId && appointments.find(a => a.id === completeId) && <CompleteModal apt={appointments.find(a => a.id === completeId)!} onConfirm={handleComplete} onClose={() => setCompleteId(null)} />}
       {rescheduleId && appointments.find(a => a.id === rescheduleId) && <RescheduleModal apt={appointments.find(a => a.id === rescheduleId)!} appointments={appointments} onConfirm={handleReschedule} onClose={() => setRescheduleId(null)} />}
 
-      <FloatingNav currentView={view} onNav={setView} currentUser={currentUser} onLogout={() => void logout()} />
+      <RoleNavigation activeView={activeNavigationView(currentUser.role, view, prevView)} pendingRequestCount={currentUser.role === 'executive' ? appointments.filter(appointment => appointment.status === 'pending' && appointment.executiveId === currentUser.executiveId).length : 0} onNav={setView} currentUser={currentUser} onLogout={() => void logout()} />
 
       <div className="app-frame relative z-10 flex flex-col min-h-screen">
-        <FloatingHeader title={VIEW_TITLES[view]} currentUser={currentUser} onNewAppointment={() => { setBookingKey(k => k + 1); setEditAptId(null); setAptPreFill(undefined); setView("new-appointment"); }} canCreate={!!canCreate} onOpenAppointment={handleViewDetail} onSearch={query => {setGlobalSearch(query);setView("appointments");}} />
+        <FloatingHeader notificationProps={{data:notificationData,onData:data=>{dataRevision.current++;setNotificationData(data);},onSessionExpired:expireSession}} title={pageTitle(currentUser.role, view)} currentUser={currentUser} onNewAppointment={() => { setBookingKey(k => k + 1); setEditAptId(null); setAptPreFill(undefined); setView("new-appointment"); }} canCreate={!!canCreate} onOpenAppointment={handleViewDetail} onSearch={query => {setGlobalSearch(query);setView("appointments");}} />
+        {!STATIC_PREVIEW && <div className={`workspace-sync ${syncError?'is-stale':''}`} role={syncError?'alert':'status'} aria-live="polite">
+          <span>{syncError || (view==='new-appointment'?'Automatic refresh paused while editing.':syncBusy?'Refreshing workspace?':'Workspace synchronized.')}{lastSync&&` Last successful update: ${new Date(lastSync).toLocaleTimeString('en-US',{timeZone:'Asia/Manila'})} (Asia/Manila).`}</span>
+          {syncError&&<button type="button" disabled={syncBusy} onClick={()=>void load(false)} className="ui-button-secondary rounded-lg px-3 py-1 text-xs">{syncBusy?'Retrying?':'Retry sync'}</button>}
+        </div>}
         <main id="main-content" className="app-main flex-1 pb-6" tabIndex={-1}>
           {view === "dashboard" && <DashboardView appointments={appointments} activityLog={activityLog} onViewDetail={handleViewDetail} onNav={setView} currentUser={currentUser} />}
-          {view === "appointments" && <AppointmentsView appointments={appointments} onViewDetail={handleViewDetail} onEdit={handleEdit} onNewAppointment={() => { setBookingKey(k => k + 1); setEditAptId(null); setAptPreFill(undefined); setView("new-appointment"); }} onCancel={setCancelId} onComplete={setCompleteId} onReschedule={setRescheduleId} currentUser={currentUser} initialSearch={globalSearch} />}
+          {(view === "appointments" || view === 'approvals') && <AppointmentsView key={view} approvalQueue={view === 'approvals'} appointments={view === 'approvals' ? appointments.filter(appointment => appointment.status === 'pending' && (currentUser.role === 'admin' || appointment.executiveId === currentUser.executiveId)) : appointments} onViewDetail={handleViewDetail} onEdit={handleEdit} onNewAppointment={() => { setBookingKey(k => k + 1); setEditAptId(null); setAptPreFill(undefined); setView("new-appointment"); }} onCancel={setCancelId} onComplete={setCompleteId} onReschedule={setRescheduleId} currentUser={currentUser} initialSearch={view === 'approvals' ? '' : globalSearch} />}
           {view === "new-appointment" && (
-            <NewAppointmentView key={bookingKey} appointments={appointments} onSave={handleSave}
+            <NewAppointmentView key={bookingKey} appointments={appointments} busySlots={busySlots} onSave={handleSave}
               onBack={() => setView(editAptId ? prevView : "dashboard")}
               onViewDetail={id => { setSelectedAptId(id); setView("detail"); }}
               onNavDashboard={() => setView("dashboard")}
@@ -1721,14 +1697,16 @@ export default function App() {
               ? <AppointmentDetailView apt={selectedApt} activityLog={activityLog} onBack={() => setView(prevView)} onEdit={handleEdit} onCancel={setCancelId} onComplete={setCompleteId} onReschedule={setRescheduleId} currentUser={currentUser} onApprovalDone={() => void load(false)} />
               : <div className="p-6 text-slate-500 text-sm flex items-center gap-2"><AlertCircle className="w-4 h-4" /> Appointment not found.</div>
           )}
-          {view === "schedule" && <ScheduleView executives={EXECUTIVES} defaultDuration={preferences.duration} appointments={appointments} onViewDetail={handleViewDetail} onNewAptFromSlot={handleNewAptFromSlot} defaultView={preferences.calendarView} canCreate={!!canCreate} />}
+          {view === "schedule" && <ScheduleView title={pageTitle(currentUser.role, 'schedule')} busySlots={busySlots} executives={EXECUTIVES} defaultDuration={preferences.duration} appointments={appointments} onViewDetail={handleViewDetail} onNewAptFromSlot={handleNewAptFromSlot} defaultView={preferences.calendarView} canCreate={!!canCreate} />}
+          {view === 'availability' && <div className="p-4 md:p-6 space-y-5"><div className="settings-page-heading"><h1 className="text-xl font-semibold text-slate-900 tracking-tight">{pageTitle(currentUser.role, 'availability')}</h1><p>{currentUser.role === 'executive' ? 'Manage your working hours, breaks and unavailable dates.' : 'Manage working hours, breaks and unavailable dates for each executive.'}</p></div><ExecutiveScheduling user={currentUser} /></div>}
+          {view === 'users' && <UserManagementView currentUser={currentUser} users={users} onUpdateUsers={updateUserActive} />}
+          {view === "email-delivery" && currentUser.role === "admin" && <EmailDelivery />}
           {view === "system-history" && currentUser.role === "admin" && <SystemHistory />}
           {view === "history" && <HistoryView appointments={appointments} onViewDetail={handleViewDetail} />}
-          {view === "settings" && <SettingsView preferences={preferences} onSavePreferences={savePreferences} currentUser={currentUser} users={users} onUpdateUsers={updateUserActive} onPasswordChanged={() => { setCurrentUser(null); setAppointments([]); setActivityLog([]); setUsers([]); }} />}
+          {view === "settings" && <SettingsView onProfileSaved={setCurrentUser} onLogout={() => void logout()} preferences={preferences} onSavePreferences={savePreferences} currentUser={currentUser} onPasswordChanged={expireSession} />}
         </main>
       </div>
 
-      <MobileBottomNav currentView={view} onNav={setView} isAdmin={currentUser.role === "admin"} />
     </div>
   );
 }

@@ -14,6 +14,7 @@ export interface SchedulingAppointment {
   startTime: string;
   duration: number;
   status?: string;
+  clientUserId?: string;
 }
 export interface SlotAvailability {
   available: boolean;
@@ -25,8 +26,9 @@ export interface SlotAvailability {
 export const scheduleDefaults: SchedulePolicy;
 export function minute(time: string): number;
 export function businessDate(now?: number): string;
+export function requiresAppointmentApproval(appointment: Pick<SchedulingAppointment, 'clientUserId'>, policy?: Pick<SchedulePolicy, 'requireApproval'>): boolean;
 export function appointmentEndTime(appointment: Pick<SchedulingAppointment, 'date' | 'startTime' | 'duration'>): number;
-export function canCompleteAppointment(appointment: Pick<SchedulingAppointment, 'date' | 'startTime' | 'duration' | 'status'>, now?: number): boolean;
+export function canCompleteAppointment(appointment: Pick<SchedulingAppointment, 'date' | 'startTime' | 'duration' | 'status' | 'clientUserId'>, now?: number): boolean;
 export function scheduleRestriction(appointment: SchedulingAppointment, policy: SchedulePolicy): SlotAvailability | null;
 export function checkSchedule(appointment: SchedulingAppointment, policy: SchedulePolicy): void;
 export function slotAvailability(appointment: SchedulingAppointment, policy: SchedulePolicy, appointments: readonly SchedulingAppointment[], options?: { now?: number; excludeId?: string; allowPast?: boolean }): SlotAvailability;

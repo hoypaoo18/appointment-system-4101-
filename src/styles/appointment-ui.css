@@ -79,7 +79,7 @@
 .skip-link:focus { transform: translateY(0); }
 .app-sidebar { background: #fff; border-right: 1px solid var(--ui-border); }
 .brand-mark { background: linear-gradient(145deg, #597bed, #405bd1); box-shadow: 0 5px 12px rgb(66 92 202 / 18%); }
-.app-sidebar .brand-mark + div > div:last-child { font-size: 10px; white-space: nowrap; }
+.sidebar-brand p { font-size: 10px; white-space: nowrap; }
 .nav-section-label, .eyebrow {
   color: #68778b;
   font-size: 10px;
@@ -89,8 +89,21 @@
   text-transform: uppercase;
 }
 .sidebar-link { min-height: 46px; border: 1px solid transparent; border-radius: 13px; font-size: 13px; }
+.role-navigation { scrollbar-width: thin; }
+.role-nav-group + .role-nav-group { margin-top: 22px; }
+.role-nav-group .nav-section-label { font-size: 9px; line-height: 1.5; letter-spacing: .11em; }
+.role-nav-group .sidebar-link { min-height: 44px; font-size: 12px; line-height: 1.5; transition: background 150ms, color 150ms; }
+.sidebar-link .nav-active-dot { width: 5px; height: 5px; flex-shrink: 0; background: #526bda; border-radius: 50%; box-shadow: 0 0 0 3px #e2e8fd; }
+.nav-request-badge { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; min-width: 21px; height: 21px; padding: 0 6px; border-radius: 999px; background: #415ac7; color: #fff; font-size: 10px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.mobile-nav-icon { position: relative; display: inline-flex; }
+.mobile-nav-icon .nav-request-badge { position: absolute; top: -7px; right: -13px; min-width: 17px; height: 17px; padding-inline: 4px; border: 2px solid #fff; font-size: 9px; }
+.nav-avatar { display: grid; place-items: center; flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%; background: #edf2ff; border: 1px solid #dbe4fc; color: #415ac7; font-size: 11px; font-weight: 600; }
+.sidebar-signout { min-height: 44px; text-align: left; }
+.mobile-nav-items { display: flex; align-items: stretch; gap: 4px; padding: 8px; }
+.mobile-nav-link { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; min-width: 0; min-height: 48px; gap: 5px; padding: 7px 4px; color: #66758c; border-radius: 11px; font-size: 10px; line-height: 1.4; font-weight: 500; }
+.mobile-nav-link.is-active { color: #415ac7; background: #edf2ff; }
+.mobile-more-panel { max-height: calc(100dvh - 48px); overflow-y: auto; }
 .sidebar-link.is-active { color: #415ac7; background: linear-gradient(100deg, #eaf0ff, #f0f2ff); border-color: #e3e9fc; font-weight: 600; }
-.sidebar-link.is-active > span:last-child { background: #526bda; box-shadow: 0 0 0 3px #e2e8fd; }
 .app-frame { margin-left: 240px; min-width: 0; }
 .app-header { background: rgb(255 255 255 / 97%); border-bottom: 1px solid var(--ui-border); }
 .header-inner { max-width: var(--workspace-width); min-height: 76px; padding: 14px 32px; margin: 0 auto; }
@@ -130,7 +143,7 @@
 .ui-surface tbody > tr:hover { background: #f8fafd; }
 .ui-surface td { vertical-align: middle; }
 .ui-surface table button { min-width: 32px; min-height: 32px; display: inline-flex; justify-content: center; align-items: center; }
-.ui-surface td.font-mono { max-width: 128px; overflow-wrap: anywhere; font-size: 10px; }
+.ui-surface td.font-mono { white-space: nowrap; font-size: 11px; }
 .status-badge { font-size: 11px; line-height: 1.5; padding: 4px 9px; white-space: nowrap; }
 .appointment-cta.ui-button-primary { min-height: 44px; padding: 12px 20px; border-radius: 999px; background: linear-gradient(115deg, #496ee7, #465bd2); border-color: rgb(255 255 255 / 12%); box-shadow: 0 5px 12px rgb(68 91 207 / 20%), inset 0 1px 0 rgb(255 255 255 / 12%); font-size: 13px; font-weight: 700; letter-spacing: -0.015em; }
 .appointment-cta.ui-button-primary:hover:not(:disabled) { background: linear-gradient(115deg, #3e61d8, #3c4fc2); box-shadow: 0 7px 18px rgb(68 91 207 / 26%); }
@@ -363,6 +376,17 @@
 .login-password-control > input::-ms-reveal { display: none; }
 .password-visibility-toggle { position: absolute; top: 0; right: 0; bottom: 0; width: 44px; display: grid; place-items: center; border-radius: 8px; color: #5f6f83; }
 .password-visibility-toggle:hover { color: #2c4e96; background: #edf3ff; }
+.client-signup-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 20px; font-size: 12px; color: #5f6f83; }
+.client-signup-links button { color: #2c4e96; font-weight: 600; min-height: 32px; }
+.client-signup-links > button:last-child { flex-basis: 100%; text-align: left; font-size: 11px; font-weight: 400; }
+.client-access .login-form-panel { padding-block: 32px; }
+.client-access-field { display: grid; gap: 7px; font-size: 12px; font-weight: 500; color: #48596f; }
+.client-access-field .login-password-control { display: block; }
+.client-access-message { display: flex; align-items: flex-start; gap: 10px; padding: 14px; margin-bottom: 20px; border-radius: 10px; background: #edf8f3; color: #1e7d61; font-size: 12px; line-height: 1.8; }
+.verification-preview { padding: 14px; border: 1px solid #f2dfb5; border-radius: 10px; margin-bottom: 20px; background: #fff8eb; color: #856022; font-size: 12px; line-height: 1.8; }
+.verification-preview a { display: inline-block; margin-top: 8px; text-decoration: underline; font-weight: 600; }
+.settings-signout { margin-top: 16px; }
+.booking-page input[readonly] { background: #f7f9fc; color: #5f6f83; }
 .login-form-panel > [class*='border-t'] { border-color: #e9eef5; }
 .login-form-panel .space-y-1\.5 > button { background: #f8fafd; border-color: #e5ebf4; }
 .login-form-panel .space-y-1\.5 > button:hover { background: #edf3ff; border-color: #c6d6f4; }
@@ -474,3 +498,15 @@
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* Reliability feedback and compact references reuse the existing surface system. */
+.workspace-sync { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:7px 24px; font-size:11px; color:#64748b; border-bottom:1px solid #e9eef5; background:#fbfcff; }
+.workspace-sync.is-stale { color:#92400e; background:#fffbeb; border-color:#fde68a; }
+.workspace-sync > span { min-width:0; overflow-wrap:anywhere; }
+.workspace-sync > button { flex-shrink:0; }
+.ui-surface table .appointment-reference { white-space:nowrap; font-size:11px; line-height:1.5; min-width:112px; justify-content:flex-start; }
+.delivery-table { min-width:800px; }
+.delivery-table td { max-width:260px; overflow-wrap:anywhere; }
+@media (max-width:767px) { .workspace-sync { padding:8px 16px; align-items:flex-start; } }
+
+.table-scroll-hint { padding:9px 16px; font-size:11px; color:#64748b; border-bottom:1px solid #edf1f6; }

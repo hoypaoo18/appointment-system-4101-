@@ -1,12 +1,34 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { appointmentEndTime, businessDate, canCompleteAppointment, scheduleDefaults, slotAvailability } from '../shared/appointment-rules.mjs';
+import { appointmentEndTime, businessDate, canCompleteAppointment, requiresAppointmentApproval, scheduleDefaults, slotAvailability } from '../shared/appointment-rules.mjs';
 
 const date = '2030-01-08';
 const beforeDay = Date.parse(date + 'T07:00:00+08:00');
 const appointment = { id: 'candidate', executiveId: 'exec-1', date, startTime: '10:00', duration: 30, status: 'confirmed' };
 const policy = overrides => ({ ...structuredClone(scheduleDefaults), ...overrides });
 const check = (changes = {}, overrides = {}, existing = [], options = {}) => slotAvailability({ ...appointment, ...changes }, policy(overrides), existing, { now: beforeDay, ...options });
+
+test('Client bookings require approval independently of the executive policy; staff bookings retain their policy', () => {
+  assert.equal(requiresAppointmentApproval({clientUserId:'client-1'}, policy({requireApproval:false})), true);
+  assert.equal(requiresAppointmentApproval({clientUserId:'client-1'}, policy({requireApproval:true})), true);
+  assert.equal(requiresAppointmentApproval({}, policy({requireApproval:false})), false);
+  assert.equal(requiresAppointmentApproval({}, policy({requireApproval:true})), true);
+});
+
+test('Pending client requests cannot be completed after their end time before approval', () => {
+  const meeting = {...appointment,clientUserId:'client-1'};
+  const after = Date.parse(date + 'T20:00:00+08:00');
+  assert.equal(canCompleteAppointment({...meeting,status:'pending'},after),false);
+  assert.equal(canCompleteAppointment({...meeting,status:'confirmed'},after),true);
+});
+
+test('Anonymous occupied times block client slots without displaying placeholder record IDs', () => {
+  const occupied = { ...appointment, id: 'unavailable-0' };
+  const result = check({}, {}, [occupied]);
+  assert.equal(result.available, false);
+  assert.equal(result.code, 'occupied');
+  assert.equal(result.reason, 'This time is unavailable. Choose another time.');
+});
 
 test('Completion uses the meeting end instant, including the exact UTC+8 boundary', () => {
   const meeting = { ...appointment, startTime: '17:00', duration: 60 };
